@@ -1,0 +1,3 @@
+# Data preparation
+
+This chapter provides a template for organizing the data flow in the EUPM analysis.

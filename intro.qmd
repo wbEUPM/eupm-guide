@@ -1,0 +1,9 @@
+# Small Area Estimations for the poverty mapping: an overview
+
+As discussed with Nobuo, Danielle and Eduard, place for an practitioners overview chapter.
+
+Place figures under `images` and use them in the text as follows making sure to refer the sources correctly. For example, @fig-decission-tree is adapted from [@Corral2022, p. 5].
+
+![SAE decision tree](images/sae-decision-tree.png){#fig-decission-tree}
+
+One can also embed mathematical formulas following the latex syntax: $y=a + b \log x$ . For more information, see [quarto help on authoring](https://quarto.org/docs/authoring/markdown-basics.html).

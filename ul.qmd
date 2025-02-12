@@ -1,0 +1,5 @@
+# Unit-Level models (TODO)
+
+Reproducible guide to the practitioners on implementing the unit-level SAE models.
+
+-   Place all data necessary under `data` (we will consider later if it worth moving data and potential functions into a separate R Package.

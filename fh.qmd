@@ -1,0 +1,11 @@
+# Fay–Herriot (TODO)
+
+Reproducible guide to the practitioners on implementing the FH SAE model.
+
+-   Place all data necessary under `data` (we will consider later if it worth moving data and potential functions into a separate R Package.
+
+Based on:
+
+-   "Comparable Small Area Estimates over Time" [@Molina2024] and R Code
+
+-   The SAE Guidelines [@Corral2022]
