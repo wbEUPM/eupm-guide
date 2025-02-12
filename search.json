@@ -1,0 +1,62 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "EUPM Practitioners Guide",
+    "section": "",
+    "text": "Introduction\nTODO",
+    "crumbs": [
+      "Introduction"
+    ]
+  },
+  {
+    "objectID": "intro.html",
+    "href": "intro.html",
+    "title": "1  Small Area Estimations for the poverty mapping: an overview",
+    "section": "",
+    "text": "As discussed with Nobuo, Danielle and Eduard, place for an practitioners overview chapter.\nPlace figures under images and use them in the text as follows making sure to refer the sources correctly. For example, Figure 1.1 is adapted from (Corral et al. 2022, 5).\n\n\n\n\n\n\nFigure 1.1: SAE decision tree\n\n\n\nOne can also embed mathematical formulas following the latex syntax: \\(y=a + b \\log x\\) . For more information, see quarto help on authoring.\n\n\n\n\nCorral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia. 2022. Guidelines to Small Area Estimation for Poverty Mapping. World Bank Washington.",
+    "crumbs": [
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>Small Area Estimations for the poverty mapping: an overview</span>"
+    ]
+  },
+  {
+    "objectID": "data.html",
+    "href": "data.html",
+    "title": "2  Data preparation",
+    "section": "",
+    "text": "This chapter provides a template for organizing the data flow in the EUPM analysis.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "fh.html",
+    "href": "fh.html",
+    "title": "3  Fay–Herriot (TODO)",
+    "section": "",
+    "text": "Reproducible guide to the practitioners on implementing the FH SAE model.\n\nPlace all data necessary under data (we will consider later if it worth moving data and potential functions into a separate R Package.\n\nBased on:\n\n“Comparable Small Area Estimates over Time” (Molina and Romero 2024) and R Code\nThe SAE Guidelines (Corral et al. 2022)\n\n\n\n\n\nCorral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia. 2022. Guidelines to Small Area Estimation for Poverty Mapping. World Bank Washington.\n\n\nMolina, Isabel, and Eva Romero. 2024. Comparable Small Area Estimates over Time.",
+    "crumbs": [
+      "<span class='chapter-number'>3</span>  <span class='chapter-title'>Fay–Herriot (TODO)</span>"
+    ]
+  },
+  {
+    "objectID": "ul.html",
+    "href": "ul.html",
+    "title": "4  Unit-Level models (TODO)",
+    "section": "",
+    "text": "Reproducible guide to the practitioners on implementing the unit-level SAE models.\n\nPlace all data necessary under data (we will consider later if it worth moving data and potential functions into a separate R Package.",
+    "crumbs": [
+      "<span class='chapter-number'>4</span>  <span class='chapter-title'>Unit-Level models (TODO)</span>"
+    ]
+  },
+  {
+    "objectID": "references.html",
+    "href": "references.html",
+    "title": "References",
+    "section": "",
+    "text": "Corral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia.\n2022. Guidelines to Small Area Estimation for Poverty Mapping.\nWorld Bank Washington.\n\n\nMolina, Isabel, and Eva Romero. 2024. Comparable Small Area\nEstimates over Time.",
+    "crumbs": [
+      "References"
+    ]
+  }
+]
