@@ -3,3 +3,49 @@
 Reproducible guide to the practitioners on implementing the unit-level SAE models.
 
 -   Place all data necessary under `data` (we will consider later if it worth moving data and potential functions into a separate R Package.
+
+## Outline for the Unit Level EBP estimation in R
+
+### Introduction
+
+unit level EBP estimation the whole game in a snapshot, we will also make it clear that this document will not provide a methodological/statistical primer in unit level poverty mapping but be focused on showing how to do this in R. For statistical details, please see Corral et al., 2022)
+
+### The Data
+
+-   here we introduce the data that will be used for the process (fake survey and census data from Estonia). End by mentioning that the full data creation process for the fake dataset can be found in the data-raw folder
+
+### Data Preparation for unit level model
+
+-   creating the variables that will correlate will household level welfare
+
+### Variable Selection
+
+- Checking that each variable has similar distribution between the survey and census and dropping variables that do not meet
+    (a function has been written to do this test better than the ebp_test_means() function in povmap)
+- Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)
+- Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)
+- Cross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)
+
+### EBP Unit Level Model Estimation
+
+- Start with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e. 
+    - all target areas (domain argument) in the survey must be in the census
+    - domain argument must be integer class
+    - remove all missing observations in survey and census
+- Implementation of the ebp() function call
+- Detailed description of the ebp class object which is returned
+
+### Post Estimation Diagnostics
+
+- Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)
+- Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis
+for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also 
+include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms
+from ebp object.  
+- Check on model validity: Create a plot to show how poverty rates vary at each ventile i.e. at 5% poverty line increments. This is to show how to check the quality
+of model prediction without the added bias of out of sample prediction
+- Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have
+to be the get the same level of precision that SAE now gives us with the census data. 
+- Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually
+the regional level in Africa. 
+- Plotting the poverty map using the ebp object and the shapefile 
