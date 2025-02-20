@@ -147,8 +147,22 @@ ul.task-list li input[type="checkbox"] {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#outline-for-the-unit-level-ebp-estimation-in-r" id="toc-outline-for-the-unit-level-ebp-estimation-in-r" class="nav-link active" data-scroll-target="#outline-for-the-unit-level-ebp-estimation-in-r"><span class="header-section-number">4.1</span> Outline for the Unit Level EBP estimation in R</a>
+  <ul class="collapse">
+  <li><a href="#introduction" id="toc-introduction" class="nav-link" data-scroll-target="#introduction"><span class="header-section-number">4.1.1</span> Introduction</a></li>
+  <li><a href="#the-data" id="toc-the-data" class="nav-link" data-scroll-target="#the-data"><span class="header-section-number">4.1.2</span> The Data</a></li>
+  <li><a href="#data-preparation-for-unit-level-model" id="toc-data-preparation-for-unit-level-model" class="nav-link" data-scroll-target="#data-preparation-for-unit-level-model"><span class="header-section-number">4.1.3</span> Data Preparation for unit level model</a></li>
+  <li><a href="#variable-selection" id="toc-variable-selection" class="nav-link" data-scroll-target="#variable-selection"><span class="header-section-number">4.1.4</span> Variable Selection</a></li>
+  <li><a href="#ebp-unit-level-model-estimation" id="toc-ebp-unit-level-model-estimation" class="nav-link" data-scroll-target="#ebp-unit-level-model-estimation"><span class="header-section-number">4.1.5</span> EBP Unit Level Model Estimation</a></li>
+  <li><a href="#post-estimation-diagnostics" id="toc-post-estimation-diagnostics" class="nav-link" data-scroll-target="#post-estimation-diagnostics"><span class="header-section-number">4.1.6</span> Post Estimation Diagnostics</a></li>
+  </ul></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
@@ -176,8 +190,61 @@ ul.task-list li input[type="checkbox"] {
 <ul>
 <li>Place all data necessary under <code>data</code> (we will consider later if it worth moving data and potential functions into a separate R Package.</li>
 </ul>
+<section id="outline-for-the-unit-level-ebp-estimation-in-r" class="level2" data-number="4.1">
+<h2 data-number="4.1" class="anchored" data-anchor-id="outline-for-the-unit-level-ebp-estimation-in-r"><span class="header-section-number">4.1</span> Outline for the Unit Level EBP estimation in R</h2>
+<section id="introduction" class="level3" data-number="4.1.1">
+<h3 data-number="4.1.1" class="anchored" data-anchor-id="introduction"><span class="header-section-number">4.1.1</span> Introduction</h3>
+<p>unit level EBP estimation the whole game in a snapshot, we will also make it clear that this document will not provide a methodological/statistical primer in unit level poverty mapping but be focused on showing how to do this in R. For statistical details, please see Corral et al., 2022)</p>
+</section>
+<section id="the-data" class="level3" data-number="4.1.2">
+<h3 data-number="4.1.2" class="anchored" data-anchor-id="the-data"><span class="header-section-number">4.1.2</span> The Data</h3>
+<ul>
+<li>here we introduce the data that will be used for the process (fake survey and census data from Estonia). End by mentioning that the full data creation process for the fake dataset can be found in the data-raw folder</li>
+</ul>
+</section>
+<section id="data-preparation-for-unit-level-model" class="level3" data-number="4.1.3">
+<h3 data-number="4.1.3" class="anchored" data-anchor-id="data-preparation-for-unit-level-model"><span class="header-section-number">4.1.3</span> Data Preparation for unit level model</h3>
+<ul>
+<li>creating the variables that will correlate will household level welfare</li>
+</ul>
+</section>
+<section id="variable-selection" class="level3" data-number="4.1.4">
+<h3 data-number="4.1.4" class="anchored" data-anchor-id="variable-selection"><span class="header-section-number">4.1.4</span> Variable Selection</h3>
+<ul>
+<li>Checking that each variable has similar distribution between the survey and census and dropping variables that do not meet (a function has been written to do this test better than the ebp_test_means() function in povmap)</li>
+<li>Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)</li>
+<li>Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)</li>
+<li>Cross-Fold Validating the variable selection process i.e.&nbsp;a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)</li>
+</ul>
+</section>
+<section id="ebp-unit-level-model-estimation" class="level3" data-number="4.1.5">
+<h3 data-number="4.1.5" class="anchored" data-anchor-id="ebp-unit-level-model-estimation"><span class="header-section-number">4.1.5</span> EBP Unit Level Model Estimation</h3>
+<ul>
+<li>Start with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e.&nbsp;
+<ul>
+<li>all target areas (domain argument) in the survey must be in the census</li>
+<li>domain argument must be integer class</li>
+<li>remove all missing observations in survey and census</li>
+</ul></li>
+<li>Implementation of the ebp() function call</li>
+<li>Detailed description of the ebp class object which is returned</li>
+</ul>
+</section>
+<section id="post-estimation-diagnostics" class="level3" data-number="4.1.6">
+<h3 data-number="4.1.6" class="anchored" data-anchor-id="post-estimation-diagnostics"><span class="header-section-number">4.1.6</span> Post Estimation Diagnostics</h3>
+<ul>
+<li>Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)</li>
+<li>Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.<br>
+</li>
+<li>Check on model validity: Create a plot to show how poverty rates vary at each ventile i.e.&nbsp;at 5% poverty line increments. This is to show how to check the quality of model prediction without the added bias of out of sample prediction</li>
+<li>Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e.&nbsp;in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.</li>
+<li>Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.</li>
+<li>Plotting the poverty map using the ebp object and the shapefile</li>
+</ul>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

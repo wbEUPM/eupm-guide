@@ -14,7 +14,7 @@
     "href": "intro.html",
     "title": "1  Small Area Estimations for the poverty mapping: an overview",
     "section": "",
-    "text": "As discussed with Nobuo, Danielle and Eduard, place for an practitioners overview chapter.\nPlace figures under images and use them in the text as follows making sure to refer the sources correctly. For example, Figure 1.1 is adapted from (Corral et al. 2022, 5).\n\n\n\n\n\n\nFigure 1.1: SAE decision tree\n\n\n\nOne can also embed mathematical formulas following the latex syntax: \\(y=a + b \\log x\\) . For more information, see quarto help on authoring.\n\n\n\n\nCorral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia. 2022. Guidelines to Small Area Estimation for Poverty Mapping. World Bank Washington.",
+    "text": "As discussed with Nobuo, Danielle and Eduard, place for an practitioners overview chapter.\nSome overview ideas:\n\nMake a decision tree of methodology given data availability.\nMake a table to take a stock of methods and Corresponding R funciton/packages that implement it. For example, see ?tbl-methods\n\n\n\n\n\n\n\n\n\n\nMethods\nsae\nemdi\nSUMMER\n\n\n\n\nSpatial Fay-Herriot\nsae::mseFH()\n\nSUMMER::smoothArea()\n\n\nFH Miltivariate\n\n\n\n\n\nAutocorrelation\n\n\n\n\n\n\nPlace figures under images and use them in the text as follows making sure to refer the sources correctly. For example, Figure 1.1 is adapted from (Corral et al. 2022, 5).\n\n\n\n\n\n\nFigure 1.1: SAE decision tree\n\n\n\nOne can also embed mathematical formulas following the latex syntax: \\(y=a + b \\log x\\) . For more information, see quarto help on authoring.\n\n\n\n\nCorral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia. 2022. Guidelines to Small Area Estimation for Poverty Mapping. World Bank Washington.",
     "crumbs": [
       "<span class='chapter-number'>1</span>  <span class='chapter-title'>Small Area Estimations for the poverty mapping: an overview</span>"
     ]
@@ -24,7 +24,67 @@
     "href": "data.html",
     "title": "2  Data preparation",
     "section": "",
-    "text": "This chapter provides a template for organizing the data flow in the EUPM analysis.",
+    "text": "2.1 Workflow and reproducibility principals\nIntroduction: this chapter provides a template for organizing the data flow in the EUPM analysis.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#workflow-and-reproducibility-principals",
+    "href": "data.html#workflow-and-reproducibility-principals",
+    "title": "2  Data preparation",
+    "section": "",
+    "text": "Brief overview of the data workflow between raw, auxiliary and clean data types.\nBasic principles of reproducibility.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#geospatial-data",
+    "href": "data.html#geospatial-data",
+    "title": "2  Data preparation",
+    "section": "2.2 Geospatial data",
+    "text": "2.2 Geospatial data\n\nDescription of the basics of the GIS data preparation for countries at different admin levels. Key problems addressed.\nSpatial validity of polygons.\nNested geospatial structure and non-intersecting boundaries.\nPolygon -unique identifiers.\nGIS boundaries harmonization over time.\n\nSynthetic regions aggregation constant in time\n\nQuality assurance of the administrative boundaries.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#raw-data-search-collection-and-documentation",
+    "href": "data.html#raw-data-search-collection-and-documentation",
+    "title": "2  Data preparation",
+    "section": "2.3 Raw data search, collection, and documentation",
+    "text": "2.3 Raw data search, collection, and documentation\nDescription of the process of data search, collection and documentation that yields with a systematized, but unstructured data library\n\nVariables search, and priority indicators.\nKey challenges and considerations for data inclusion:\n\nThematic relevance\nTime range available\nTerritorial unit available\nCoverage and completeness\n\nDetails on specific data sources:\n\nAPI-based data\nManually downloaded spreadsheets\nBulk downloads\nRemote sensing and GIS-based data, zonal statistcs, etc.\n\nPrincipals of data storage and systematization\nDocumenting collected data with metadata and it notes on search\n\nKey validation requirements – source type, survey type\n\n\nCountry-based examples: use one country as an example.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#preparing-auxiliary-data",
+    "href": "data.html#preparing-auxiliary-data",
+    "title": "2  Data preparation",
+    "section": "2.4 Preparing auxiliary data",
+    "text": "2.4 Preparing auxiliary data\nAdding structure to the raw data by transforming it into a normalized data set with columns: id, year, variable, value.\n\ncreating and storing the auxiliary data\ndata reproduction and version-control\nprincipals of the data quality assurance and quality control\n\nCountry-based examples: use one country as an example.",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#clean-and-analysis-ready-data",
+    "href": "data.html#clean-and-analysis-ready-data",
+    "title": "2  Data preparation",
+    "section": "2.5 Clean and analysis-ready data",
+    "text": "2.5 Clean and analysis-ready data\nGetting meaningful and relevant indicators out of the data.\n\nReshaping auxiliary data into the analysis-ready dataset.\nComputing relevant indicators: means, ratios, fractions, etc.\n\nGroup-wise operations by year, and across regions.\n\nRegression-data quality assurance: spatial and temporal completeness\nAdding data important data from elsewhere: SILK poverty estimates",
+    "crumbs": [
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
+    ]
+  },
+  {
+    "objectID": "data.html#descriptive-analysis",
+    "href": "data.html#descriptive-analysis",
+    "title": "2  Data preparation",
+    "section": "2.6 Descriptive analysis",
+    "text": "2.6 Descriptive analysis\nKey principals and examples of descriptive statistics.\n\nExamples of existing R functional for this.",
     "crumbs": [
       "<span class='chapter-number'>2</span>  <span class='chapter-title'>Data preparation</span>"
     ]
@@ -34,7 +94,7 @@
     "href": "fh.html",
     "title": "3  Fay–Herriot (TODO)",
     "section": "",
-    "text": "Reproducible guide to the practitioners on implementing the FH SAE model.\n\nPlace all data necessary under data (we will consider later if it worth moving data and potential functions into a separate R Package.\n\nBased on:\n\n“Comparable Small Area Estimates over Time” (Molina and Romero 2024) and R Code\nThe SAE Guidelines (Corral et al. 2022)\n\n\n\n\n\nCorral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia. 2022. Guidelines to Small Area Estimation for Poverty Mapping. World Bank Washington.\n\n\nMolina, Isabel, and Eva Romero. 2024. Comparable Small Area Estimates over Time.",
+    "text": "Present examples of the FH model chronologically with additional explanations based on the Pauls’ materials for the summer school.",
     "crumbs": [
       "<span class='chapter-number'>3</span>  <span class='chapter-title'>Fay–Herriot (TODO)</span>"
     ]
@@ -44,7 +104,17 @@
     "href": "ul.html",
     "title": "4  Unit-Level models (TODO)",
     "section": "",
-    "text": "Reproducible guide to the practitioners on implementing the unit-level SAE models.\n\nPlace all data necessary under data (we will consider later if it worth moving data and potential functions into a separate R Package.",
+    "text": "4.1 Outline for the Unit Level EBP estimation in R\nReproducible guide to the practitioners on implementing the unit-level SAE models.",
+    "crumbs": [
+      "<span class='chapter-number'>4</span>  <span class='chapter-title'>Unit-Level models (TODO)</span>"
+    ]
+  },
+  {
+    "objectID": "ul.html#outline-for-the-unit-level-ebp-estimation-in-r",
+    "href": "ul.html#outline-for-the-unit-level-ebp-estimation-in-r",
+    "title": "4  Unit-Level models (TODO)",
+    "section": "",
+    "text": "4.1.1 Introduction\nunit level EBP estimation the whole game in a snapshot, we will also make it clear that this document will not provide a methodological/statistical primer in unit level poverty mapping but be focused on showing how to do this in R. For statistical details, please see Corral et al., 2022)\n\n\n4.1.2 The Data\n\nhere we introduce the data that will be used for the process (fake survey and census data from Estonia). End by mentioning that the full data creation process for the fake dataset can be found in the data-raw folder\n\n\n\n4.1.3 Data Preparation for unit level model\n\ncreating the variables that will correlate will household level welfare\n\n\n\n4.1.4 Variable Selection\n\nChecking that each variable has similar distribution between the survey and census and dropping variables that do not meet (a function has been written to do this test better than the ebp_test_means() function in povmap)\nDropping multicollinear variables (using the VIF method and complementing with correlation threshold method)\nImplementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)\nCross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)\n\n\n\n4.1.5 EBP Unit Level Model Estimation\n\nStart with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e. \n\nall target areas (domain argument) in the survey must be in the census\ndomain argument must be integer class\nremove all missing observations in survey and census\n\nImplementation of the ebp() function call\nDetailed description of the ebp class object which is returned\n\n\n\n4.1.6 Post Estimation Diagnostics\n\nPresenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)\nChecking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.\n\nCheck on model validity: Create a plot to show how poverty rates vary at each ventile i.e. at 5% poverty line increments. This is to show how to check the quality of model prediction without the added bias of out of sample prediction\nComputing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.\nFinal validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.\nPlotting the poverty map using the ebp object and the shapefile",
     "crumbs": [
       "<span class='chapter-number'>4</span>  <span class='chapter-title'>Unit-Level models (TODO)</span>"
     ]
@@ -54,7 +124,7 @@
     "href": "references.html",
     "title": "References",
     "section": "",
-    "text": "Corral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia.\n2022. Guidelines to Small Area Estimation for Poverty Mapping.\nWorld Bank Washington.\n\n\nMolina, Isabel, and Eva Romero. 2024. Comparable Small Area\nEstimates over Time.",
+    "text": "Corral, Paul, Isabel Molina, Alexandru Cojocaru, and Sandra Segovia.\n2022. Guidelines to Small Area Estimation for Poverty Mapping.\nWorld Bank Washington.",
     "crumbs": [
       "References"
     ]

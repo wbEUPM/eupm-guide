@@ -147,8 +147,19 @@ ul.task-list li input[type="checkbox"] {
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
-    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
-        
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#workflow-and-reproducibility-principals" id="toc-workflow-and-reproducibility-principals" class="nav-link active" data-scroll-target="#workflow-and-reproducibility-principals"><span class="header-section-number">2.1</span> Workflow and reproducibility principals</a></li>
+  <li><a href="#geospatial-data" id="toc-geospatial-data" class="nav-link" data-scroll-target="#geospatial-data"><span class="header-section-number">2.2</span> Geospatial data</a></li>
+  <li><a href="#raw-data-search-collection-and-documentation" id="toc-raw-data-search-collection-and-documentation" class="nav-link" data-scroll-target="#raw-data-search-collection-and-documentation"><span class="header-section-number">2.3</span> Raw data search, collection, and documentation</a></li>
+  <li><a href="#preparing-auxiliary-data" id="toc-preparing-auxiliary-data" class="nav-link" data-scroll-target="#preparing-auxiliary-data"><span class="header-section-number">2.4</span> Preparing auxiliary data</a></li>
+  <li><a href="#clean-and-analysis-ready-data" id="toc-clean-and-analysis-ready-data" class="nav-link" data-scroll-target="#clean-and-analysis-ready-data"><span class="header-section-number">2.5</span> Clean and analysis-ready data</a></li>
+  <li><a href="#descriptive-analysis" id="toc-descriptive-analysis" class="nav-link" data-scroll-target="#descriptive-analysis"><span class="header-section-number">2.6</span> Descriptive analysis</a></li>
+  </ul>
+</nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
@@ -172,9 +183,87 @@ ul.task-list li input[type="checkbox"] {
 </header>
 
 
-<p>This chapter provides a template for organizing the data flow in the EUPM analysis.</p>
+<p>Introduction: this chapter provides a template for organizing the data flow in the EUPM analysis.</p>
+<section id="workflow-and-reproducibility-principals" class="level2" data-number="2.1">
+<h2 data-number="2.1" class="anchored" data-anchor-id="workflow-and-reproducibility-principals"><span class="header-section-number">2.1</span> Workflow and reproducibility principals</h2>
+<ul>
+<li>Brief overview of the data workflow between raw, auxiliary and clean data types.</li>
+<li>Basic principles of reproducibility.</li>
+</ul>
+</section>
+<section id="geospatial-data" class="level2" data-number="2.2">
+<h2 data-number="2.2" class="anchored" data-anchor-id="geospatial-data"><span class="header-section-number">2.2</span> Geospatial data</h2>
+<ol type="1">
+<li><p>Description of the basics of the GIS data preparation for countries at different admin levels. Key problems addressed.</p></li>
+<li><p>Spatial validity of polygons.</p></li>
+<li><p>Nested geospatial structure and non-intersecting boundaries.</p></li>
+<li><p>Polygon -unique identifiers.</p></li>
+<li><p>GIS boundaries harmonization over time.</p>
+<ul>
+<li>Synthetic regions aggregation constant in time</li>
+</ul></li>
+<li><p>Quality assurance of the administrative boundaries.</p></li>
+</ol>
+</section>
+<section id="raw-data-search-collection-and-documentation" class="level2" data-number="2.3">
+<h2 data-number="2.3" class="anchored" data-anchor-id="raw-data-search-collection-and-documentation"><span class="header-section-number">2.3</span> Raw data search, collection, and documentation</h2>
+<p>Description of the process of data search, collection and documentation that yields with a systematized, but unstructured data library</p>
+<ol type="1">
+<li><p>Variables search, and priority indicators.</p></li>
+<li><p>Key challenges and considerations for data inclusion:</p>
+<ul>
+<li>Thematic relevance</li>
+<li>Time range available</li>
+<li>Territorial unit available</li>
+<li>Coverage and completeness</li>
+</ul></li>
+<li><p>Details on specific data sources:</p>
+<ul>
+<li>API-based data</li>
+<li>Manually downloaded spreadsheets</li>
+<li>Bulk downloads</li>
+<li>Remote sensing and GIS-based data, zonal statistcs, etc.</li>
+</ul></li>
+<li><p>Principals of data storage and systematization</p></li>
+<li><p>Documenting collected data with metadata and it notes on search</p>
+<ul>
+<li>Key validation requirements – source type, survey type</li>
+</ul></li>
+</ol>
+<p>Country-based examples: use one country as an example.</p>
+</section>
+<section id="preparing-auxiliary-data" class="level2" data-number="2.4">
+<h2 data-number="2.4" class="anchored" data-anchor-id="preparing-auxiliary-data"><span class="header-section-number">2.4</span> Preparing auxiliary data</h2>
+<p>Adding structure to the raw data by transforming it into a normalized data set with columns: id, year, variable, value.</p>
+<ul>
+<li>creating and storing the auxiliary data</li>
+<li>data reproduction and version-control</li>
+<li>principals of the data quality assurance and quality control</li>
+</ul>
+<p>Country-based examples: use one country as an example.</p>
+</section>
+<section id="clean-and-analysis-ready-data" class="level2" data-number="2.5">
+<h2 data-number="2.5" class="anchored" data-anchor-id="clean-and-analysis-ready-data"><span class="header-section-number">2.5</span> Clean and analysis-ready data</h2>
+<p>Getting meaningful and relevant indicators out of the data.</p>
+<ul>
+<li><p>Reshaping auxiliary data into the analysis-ready dataset.</p></li>
+<li><p>Computing relevant indicators: means, ratios, fractions, etc.</p>
+<ul>
+<li>Group-wise operations by year, and across regions.</li>
+</ul></li>
+<li><p>Regression-data quality assurance: spatial and temporal completeness</p></li>
+<li><p>Adding data important data from elsewhere: SILK poverty estimates</p></li>
+</ul>
+</section>
+<section id="descriptive-analysis" class="level2" data-number="2.6">
+<h2 data-number="2.6" class="anchored" data-anchor-id="descriptive-analysis"><span class="header-section-number">2.6</span> Descriptive analysis</h2>
+<p>Key principals and examples of descriptive statistics.</p>
+<ul>
+<li>Examples of existing R functional for this.</li>
+</ul>
 
 
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
