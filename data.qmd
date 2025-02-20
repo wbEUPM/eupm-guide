@@ -1,3 +1,80 @@
 # Data preparation
 
-This chapter provides a template for organizing the data flow in the EUPM analysis.
+Introduction: this chapter provides a template for organizing the data flow in the EUPM analysis.
+
+## Workflow and reproducibility principals
+
+*   Brief overview of the data workflow between raw, auxiliary and clean data types.
+*   Basic principles of reproducibility.
+
+## Geospatial data
+
+1.  Description of the basics of the GIS data preparation for countries at different admin levels. Key problems addressed.
+
+1.  Spatial validity of polygons.
+2.	Nested geospatial structure and non-intersecting boundaries.
+3.	Polygon -unique identifiers.
+4.	GIS boundaries harmonization over time.
+
+    *   Synthetic regions aggregation constant in time
+    
+5.	Quality assurance of the administrative boundaries.
+
+## Raw data search, collection, and documentation 
+
+Description of the process of data search, collection and documentation that yields with a systematized, but unstructured data library 
+
+1.  Variables search, and priority indicators.
+2.  Key challenges and considerations for data inclusion:
+
+    *   Thematic relevance
+    *   Time range available
+    *   Territorial unit available
+    *   Coverage and completeness
+
+3.  Details on specific data sources:
+
+    *   API-based data
+    *   Manually downloaded spreadsheets 
+    *   Bulk downloads
+    *   Remote sensing and GIS-based data, zonal statistcs, etc.
+
+4.  Principals of data storage and systematization 
+5.  Documenting collected data with metadata and it notes on search
+
+    *   Key validation requirements – source type, survey type
+    
+Country-based examples: use one country as an example. 
+
+## Preparing auxiliary data
+
+Adding structure to the raw data by transforming it into a normalized data set with columns: id, year, variable, value.
+
+*   creating and storing the auxiliary data 
+*   data reproduction and version-control 
+*   principals of the data quality assurance and quality control
+
+Country-based examples: use one country as an example. 
+
+##  Clean and analysis-ready data
+
+Getting meaningful and relevant indicators out of the data. 
+
+*   Reshaping auxiliary data into the analysis-ready dataset.
+*   Computing relevant indicators: means, ratios, fractions, etc.
+
+    *   Group-wise operations by year, and across regions. 
+    
+*   Regression-data quality assurance: spatial and temporal completeness 
+*   Adding data important data from elsewhere: SILK poverty estimates
+
+## Descriptive analysis
+
+Key principals and examples of descriptive statistics.
+
+*   Examples of existing R functional for this.
+
+
+
+
+
