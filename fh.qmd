@@ -1,3 +1,6 @@
 # Fay–Herriot (TODO)
 
-Present examples of the FH model chronologically with additional explanations based on the Pauls' materials for the s[ummer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024.).
+## Data
+The example code uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024.).
+
+# Load libraries
