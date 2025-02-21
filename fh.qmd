@@ -97,6 +97,7 @@ data <- data %>%
 ## Fay-Herriot SAE modeling
 
 ### Model creation
+FH does not run if there is any missing value in the dataset, and therefore, any variable with missing value should be removed in advance.
 ```{r fh_model}
 formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars, collapse = "+")))
 data2 <- data[,c(hhvars,"dir_fgt0", "dir_fgt0_var","region.y","district")]
@@ -104,6 +105,8 @@ data3 <- na.omit(data2)
 ```
 
 ### Check the perfect multicollinearity
+With eblupFH, the model does not run if there is perfect multicollinearity between variables, so we need to omit them in advance.
+
 ```{r check_multicollinearity}
 alias( formula, data = data3)
 hhvars2 <- setdiff(hhvars, "head_birthplace8")
