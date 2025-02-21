@@ -1,7 +1,22 @@
 # Fay–Herriot (TODO)
 
+FH estimation procedure:
+Step 1 Compute the selected direct area estimators ¥, and estimators of their corresponding sampling variances (perhaps previously smoothed)
+
+Step 2 Select the aggregated auxiliary variables at the area level for the FH model. A simple approach is to perform a model selection procedure in a linear regression
+model without the area effects, e.g., using stepwise selection, exhaustive search or LASSO.
+
+Step 3 Fit the model and check the FH model assumptions, including linearity, normality of predicted area effects and standardized model residuals, and the
+presence of outlying areas.
+
+Step 4 In case of clear systematic model departures, the model should be changed. In case of isolated departures because of outlying areas, either do not obtain the FH
+estimate for those areas or change some aspect of the model or the data. Then, repeat Steps 2 and 3.
+
+Step 5 If the model assumptions hold, using the above direct estimates, estimated sampling variances and the selected auxiliary variables, compute the FH estimators
+and their estimated MSEs.
+
 ## Data and variables preparation
-The example code uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024.).
+The example code in this guideline uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024.).
 
 ### Load required libraries
 ```{r libraries}
