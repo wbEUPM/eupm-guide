@@ -1,5 +1,7 @@
 # Fay–Herriot (TODO)
 
+This chapter describes how to run the simple Fay-Herriot using the real data from Ghana. If there is a need to consider the temporal autocorrelation or spacial correlation, please refer to the next chapter.  
+
 FH estimation procedure:
 Step 1 Compute the selected direct area estimators ¥, and estimators of their corresponding sampling variances (perhaps previously smoothed)
 
