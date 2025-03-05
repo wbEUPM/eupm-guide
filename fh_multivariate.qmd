@@ -215,10 +215,10 @@ legend("top", legend = c("Direct", "EBLUP STFH"), ncol = 2, col=c(1,4), lwd = re
 
 The left figure shows the STFH estimators, together with the direct estimates for each area at the last time point, with areas sorted by increasing CVs of direct estimators. The right figure shows the corresponding CVs. In this example, we can see that, even with a very small number of areas (D = 11) and time instants (T = 3) to borrow strength from, the STFH estimates follow closely direct estimates, but are slightly more stable than them, and have smaller estimated CVs for all the areas.
 
-We also apply basic univariate FH models for each time instant, that is, cross- sectionally, to analyze the differences with the results obtained from the STFH model.
+We also apply basic univariate FH models for each time instant, that is, crosssectionally, to analyze the differences with the results obtained from the STFH model.
 For this, we first select the data corresponding to each time instant and then call the function mseFH() using those separate data sets. STFH estimates are stored in an additional column of the data frame results:
 
-```{r figure8}
+```{r compare_results}
 data.time1<-spacetime[spacetime$Time==1,] 
 data.time2<-spacetime[spacetime$Time==2,] data.time3<-spacetime[spacetime$Time==3,]
 eblup.FH.res.time1<-mseFH(Y~X1+X2,vardir=Var,data=data.time1) 
@@ -232,62 +232,41 @@ eblup.FH.time3<-eblup.FH.res.time3$est$eblup r
 results$eblup.FH[results$Time==3]<-eblup.FH.time3
 ```
 Let us now plot the STFH estimates, together with direct and cross-sectional FH estimates, for the first area (coded as Area=2) over the three time instants:
+
+```{r figure9}
 results.A1 <- results[results$Area == 2, ]
-
 x11()
 layout(1) k<-3
-m<-min(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) M<-max(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) plot(1:3,results.A1$DIR, type = "n", xlab = "Time",
+m<-min(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) 
+M<-max(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) 
+plot(1:3,results.A1$DIR, type = "n", xlab = "Time",
 ylab = "Estimates: First area", ylim = c(m,M+(M-m)/k), cex.axis = 1.5, cex.lab = 1.5, xaxt = "n")
- 
-
 axis(1, 1:3, 1:3, cex.axis = 1.5)
-points(1:3,results.A1$DIR, type = "b", col = 1, lwd = 2, pch = 1) points(1:3,results.A1$eblup.FH, type = "b", col = 3,lwd = 2,pch = 3) points(1:3,results.A1$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) legend("top", legend = c("Direct", "EBLUP FH", "EBLUP STFH"), ncol = 2,
+points(1:3,results.A1$DIR, type = "b", col = 1, lwd = 2, pch = 1) 
+points(1:3,results.A1$eblup.FH, type = "b", col = 3,lwd = 2,pch = 3) 
+points(1:3,results.A1$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) 
+legend("top", legend = c("Direct", "EBLUP FH", "EBLUP STFH"), ncol = 2,
 col = c(1,3,4),lwd = rep(2,3), pch = c(1,3,4), cex = 1.3)
-Finally, we repeat the process for the last area (coded as Area=46): results.A11 <- results[results$Area == 46, ]
+```
+
+Finally, we repeat the process for the last area (coded as Area=46): 
+```{r figure10}
+results.A11 <- results[results$Area == 46, ]
 x11()
 layout(1) k<-3
-m<-min(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) M<-max(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) plot(1:3,results.A11$DIR, type = "n", xlab = "Time",
+m<-min(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) 
+M<-max(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) 
+plot(1:3,results.A11$DIR, type = "n", xlab = "Time",
 ylab = "Estimates: Last area", ylim = c(m, M+(M-m)/k), cex.axis = 1.5, cex.lab = 1.5, xaxt = "n")
 axis(1, 1:3, 1:3, cex.axis = 1.5)
-points(1:3,results.A11$DIR, type = "b", col = 1, lwd = 2, pch = 1) points(1:3,results.A11$eblup.FH, type = "b", col = 3,lwd = 2,pch = 3) points(1:3,results.A11$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) legend("top", legend = c("Direct", "EBLUP FH", "EBLUP STFH"), ncol = 2,
+points(1:3,results.A11$DIR, type = "b", col = 1, lwd = 2, pch = 1) 
+points(1:3,results.A11$eblup.FH, type = "b", col = 3,lwd = 2,pch = 3) 
+points(1:3,results.A11$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) 
+legend("top", legend = c("Direct", "EBLUP FH", "EBLUP STFH"), ncol = 2,
 col = c(1,3,4), lwd = rep(2,3), pch = c(1,3,4), cex = 1.3)
-Results are shown in Figure 14. We did already see in the previous examples that direct estimators are unstable across areas. We can see that they are also the most unstable over time. Cross-sectional FH estimators applied for each time instant t = 1, 2, 3, are more stable across areas, but not necessarily over time. Figure 14 shows that STFH estimators are smoother over time than both, direct and cross-sectional FH estimates.
+```
 
-
-
- 	 
- 
-1	2	3
-Time
- 
-1	2	3
-Time
- 
-
-Figure 14: Direct, FH and STFH estimates of the area means for the first area (left) and the last area (right).
- 
-7	Statistical comparison of indicators over time
-Now consider that, for a given area d, we wish to compare the indicators at two time periods, δdt and δds, with s < t; more concretely, we wish to analyze the increment
-∆d = δdt − δds. Let δˆEB and δˆEB be EB predictors of δdt and δds obtained either from
-dt	ds
-the MFH of Section 5 or the STFH model of Section 6. Since there is dependency, making inference to compare δdt and δds entails accounting for the uncertainty of the difference of EB predictors ∆ˆ EB = δˆEB − δˆEB , which is given by
-d	dt	ds
-MSE(∆ˆ EB ) = MSE(δˆEB ) + MSE(δˆEB ) − 2 MCPE(δˆEB , δˆEB ).
-d	dt	ds	ds	dt
-Then, apart from estimators M^SE(δˆEB ) and M^SE(δˆEB ) of MSE(δˆEB ) and MSE(δˆEB ),
-dt	ds	dt	ds
-an estimator M^CPE(δˆEB , δˆEB ) of MCPE(δˆEB , δˆEB ) is required. Then, an estimator
-dt	ds	dt	ds
-of the MSE of the difference is given by
-M^SE(∆ˆ EB ) = M^SE(δˆEB ) + M^SE(δˆEB ) − 2 M^CPE(δˆEB , δˆEB ).
-d	dt	ds	ds	dt
-Although the distribution of the EB predictors is not really normal, a simple approximate 1 − α confidence interval for the increment ∆d, can be obtained using the normal quantile, as
-CIα(∆d) = ∆ˆ EB ∓ Zα/2ñM^SE(∆ˆ EB ).
-Using this interval, we can say that the difference ∆d between indicators at times t and s is statistically different from zero at level α, if the 1 − α confidence interval does not contain zero. Other hypotheses can also be tested about the increment ∆d. Instead of considering the normal quantiles, an alternative approach is to use a bootstrap confidence interval.
-The R package msae by Permatasari and Ubaidillah (2022) used in Section 5 and the functions for the STFH model of the R package sae by Molina and Marhuenda (2009)
-deliver the EBLUPs δˆEB of δdt, and their estimated MSEs, M^SE(δˆEB ), d = 1, . . . , D,
-dt	dt
-for each time point t = 1, . . . , T . Unluckily, these functions do not return estimates of the MCPE of two EB predictors. Again, a bootstrap procedure may be employed to estimate the MCPE and at the same time obtaining a confidence interval for ∆d or performing a hypothesis test about ∆d. Development and implementation of this bootstrap methodology would be needed.
+We did already see in the previous examples that direct estimators are unstable across areas. We can see that they are also the most unstable over time. Cross-sectional FH estimators applied for each time instant t = 1, 2, 3, are more stable across areas, but not necessarily over time. Figure 14 shows that STFH estimators are smoother over time than both, direct and cross-sectional FH estimates.
 
 
 
