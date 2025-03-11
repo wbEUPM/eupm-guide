@@ -1,18 +1,67 @@
-# Unit-Level models (TODO)
+## Unit-Level Models
 
-Reproducible guide to the practitioners on implementing the unit-level SAE models.
+```{r, echo=FALSE, include=FALSE}
 
--   Place all data necessary under `data` (we will consider later if it worth moving data and potential functions into a separate R Package.
+if (sum(installed.packages()[,1] %in% "pacman") != 1) {
+  
+  install.packages("pacman")
+  
+}
 
-## Outline for the Unit Level EBP estimation in R
+pacman::p_load(povmap, emdi, dplyr, data.table, glmnet, glmmLasso)
+
+
+```
+
 
 ### Introduction
 
-unit level EBP estimation the whole game in a snapshot, we will also make it clear that this document will not provide a methodological/statistical primer in unit level poverty mapping but be focused on showing how to do this in R. For statistical details, please see Corral et al., 2022)
+In this section, we will present an implementation of the Empirical Best Prediction (EBP) unit modelling approach in R based on World Bank's Small Area Estimation Guidelines, [@corral2022guidelines], as well as [@molina2010small] and [@rao2015small]. Similar to the disclaimer made in the previous section, this practical manual does not present a theoretical statistical primer on unit level poverty mapping. Rather, it presents a combination of practical and simple R scripts with appropriate explanations to expose the simplicity of performing these tasks in R to the user. The studies previously cited are excellent starting points for those interested in understanding the theoretical underpinnings for the code being presented here. 
 
+This chapter is subdivided as follows to show the whole game of the EBP linear mixed effect modelling approach: 
+
+  (A) The Data: In this subsection, we present a brief checklist of data items needed for the unit level poverty mapping as well as present the specific data to be used in this chapter. 
+  
+  (B) Data Preparation: Here we present the process of transforming the data in (A) into what is needed for variable selection and then estimating a unit level poverty map
+  
+  (C) Variable Selection: We present the LASSO methodology of the GLMNET, glmmLasso and hdm R packages as well as another implementation that uses the stepwise model
+  
+  (D) EBP Unit Level Model Estimation: Having selected the set of variables, we proceed to use the povmap package's ebp function to estimate the poverty map. 
+  
+  (E) Post Estimation Diagnostics: We proceed to test model assumptions of the EBP linear mixed effects model and present functions within the povmap package for producing report ready figure and tables. 
+  
+  
 ### The Data
 
--   here we introduce the data that will be used for the process (fake survey and census data from Estonia). End by mentioning that the full data creation process for the fake dataset can be found in the data-raw folder
+The main idea of SAE is to combine multiple data sources. Typically, there is a survey data set and a census or administrative/register dataset both at an individual and/or household unit level. The target variable (typically household welfare/income for poverty mapping) is available in the survey but not in the census data. The goal of the exercise is to estimate welfare/income for each unit within the census or administrative register dataset by developing a model of welfare or income within the survey. It is important that the outcome variable has the same definition within the census or administrative dataset as the case maybe. It would be inappropriate to estimate household welfare/income within the survey and use the same model to predict income at the individual level of the census. Below is a brief checklist of data requirements needed for unit level poverty mapping with the povmap R package: 
+
+- A unit level survey `data.frame` object with individual and household characteristics including the target area variable, outcome variable (welfare aggregates, income per capita etc)
+
+- A unit census/administrative register `dataframe` object with individual and household characteristics including the target area variable. The outcome variable is typically missing since the topic of this tutorial is estimating it. 
+
+- All target areas within the survey must be present within the census. The `emdi::ebp()` and `povmap::ebp()` function calls will result in an error message if values in the target area variable are missing within the survey, this includes `NA` values within the survey target area column that are not in the census' target area column. 
+
+- The target area variables (i.e. the variable describing areas where poverty rates will be estimated) should be `integer` class variable. The reason for this will made obvious later in this tutorial. 
+
+
+For the purposes of this tutorial, we will use the European Union Statistics on Income and Living Conditions (EU-SILC) in Austria from 2006. Please see [@kreutzmann2019r] for the full description of the dataset 
+
+
+```{r}
+
+### load the data
+
+survey_dt <- eusilcA_smp
+
+census_dt <- eusilcA_pop ## ignore the eqIncome variable that has been left in the eusilcA_pop dataset 
+
+
+
+
+
+
+```
+
 
 ### Data Preparation for unit level model
 
