@@ -1,1 +1,127 @@
+```{r library, message = FALSE, warning = FALSE}
+library(haven)
+library(dplyr)
+library(survey)
+library(matrixStats)
+library(readstata13)
+```
 
+## Load the data
+```{r load_data, message = FALSE, warning = FALSE}
+data <- read.dta13("https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/input/survey_2017.dta")
+```
+
+## Create "strata" by grouping "region" and "urban"
+```{r strata, message = FALSE, warning = FALSE}
+ data <- data %>% mutate(strata = as.numeric(interaction(region,urban, drop = T)))
+```
+ 
+## Generate y variable
+```{r poverty, message = FALSE, warning = FALSE}
+ data <- data %>% 
+   mutate(fgt0 = ifelse(!is.na(welfare), as.numeric(welfare < pl_abs), NA))
+```
+
+
+## Define the survey design
+```{r survey_design, message = FALSE, warning = FALSE}
+ survey_design <- svydesign(
+   id = ~clust,
+   weights = ~WTA_S_HHSIZE,
+   strata = ~strata,
+   nest = T,
+   data = data
+ )
+```
+
+
+## Proportion calculation (svy: proportion fgt0, over(region))
+```{r proportion, message = FALSE, warning = FALSE}
+ prop_region <- svyby(
+   ~fgt0,
+   ~region,
+   survey_design,
+   svymean,
+   na.rm=T,
+   vartype = ("var")
+ )
+fgt0 <- prop_region$fgt0
+fgt0_var <- prop_region$var
+```
+
+
+## Weighted mean and row sum by region
+```{r aggregate_estimate_variance, message = FALSE, warning = FALSE}
+ group_region <- data %>%
+   group_by(region) %>%
+   summarise(
+     fgt0 = weighted.mean(fgt0, WTA_S_HHSIZE, na.rm=T),
+     WTA_S_HHSIZE = sum(WTA_S_HHSIZE, na.rm=T),
+     .groups = "drop"
+   ) %>%
+   mutate(
+     dir_fgt0 = fgt0,
+     dir_fgt0_var = fgt0_var,
+     dir_fgt0_var = ifelse(dir_fgt0_var == 0, NA, dir_fgt0_var),
+     dir_fgt0 = ifelse(is.na(dir_fgt0_var),NA,dir_fgt0)
+   )
+```
+
+
+## Save the results for regions
+```{r save1, message = FALSE, warning = FALSE}
+ write_dta(group_region, "direct_glss7_region.dta")
+```
+ 
+ 
+## Proportion calculation by districts
+```{r proportion_districts, message = FALSE, warning = FALSE}
+ prop_district <- svyby(
+   ~fgt0,
+   ~district,
+   survey_design,
+   svymean,
+   na.rm=T,
+   vartype = ("var")
+ )
+ fgt0 <- prop_district$fgt0
+ fgt0_var <- prop_district$var
+```
+
+
+
+## Count the number of enumeration areas (EA) by district
+```{r ea, message = FALSE, warning = FALSE}
+ data <- data %>% mutate(N = 1, N_hhsize = hhsize) %>%
+   group_by(district, clust) %>%
+   mutate(num_ea = ifelse(row_number() == 1,1,0)) %>%
+   ungroup()
+```
+
+## Weighted mean and row sum by region and district
+```{r aggregated_region_district, message = FALSE, warning = FALSE}
+ group_region_district <- data %>%
+   group_by(region, district) %>%
+   summarise(
+     fgt0 = weighted.mean(fgt0, WTA_S_HHSIZE, na.rm=T),
+     N = sum(N, na.rm=T),
+     WTA_S_HHSIZE = sum(WTA_S_HHSIZE, na.rm=T),
+     N_hhsize = sum(N_hhsize,na.rm=T),
+     num_ea = sum(num_ea, na.rm=T),
+     .groups = "drop"
+   ) %>%
+   mutate(
+     dir_fgt0 = fgt0,
+     zero = dir_fgt0,
+     dir_fgt0_var = fgt0_var,
+     dir_fgt0_var = ifelse(dir_fgt0_var == 0, NA, dir_fgt0_var),
+     dir_fgt0 = ifelse(is.na(dir_fgt0_var),NA,dir_fgt0)
+   )
+``` 
+
+
+ ## Save the results for regions + districts
+```{r save2, message = FALSE, warning = FALSE}
+ write_dta(group_region_district, "direct_glss7.dta")
+ ```
+ 
