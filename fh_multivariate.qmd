@@ -35,7 +35,7 @@ In this example, we use the data set datasae3 from the R package msae (Permatasa
 
 We first load the package and the data set:
 
-```{r load_data}
+```{r load_data, message = FALSE, warning = FALSE}
 library(msae) 
 data(datasae3)
 ```
@@ -44,7 +44,7 @@ Step 1: The direct area estimators and their sample variances are already given 
 Step 2: We should select the auxiliary variables at each time point. This example is only for illustration of application of the R function, and hence we use all the available variables, but we should emphasize the importance of this variable selection process in real-world applications.
 Step 3: In order to choose between the two alternative MFH models with heteroscedastic or homoscedastic area-time effects, we fit the heteroscedastic Model 3, and then check for the equality of the variances over the three time points. Hence, we use the function eblupMFH3 to fit the model:
 
-```{r run_mfh3}
+```{r run_mfh3, message = FALSE, warning = FALSE}
 Fo <- list(f1=Y1~X1+X2,
 f2=Y2~X1+X2, f3=Y3~X1+X2)
 vardir <- c("v1", "v2", "v3", "v12", "v13", "v23") 
@@ -58,9 +58,8 @@ This test tests the null hypothesis that the variances $σ^2$ at each pair of in
 
 Step 4: We now verify the assumptions of the MFH3 model. This includes assessing linearity, the normality of the predicted area effects and standardized residuals, as well as checking for the presence of outlying areas. We first check the linearity assumption. This can be addressed by examining the scatter plot of residuals against predicted values (EBLUPs). The plot is generated for each of the T = 3 time periods.
 
-```{r figure1}
+```{r figure1, message = FALSE, warning = FALSE}
 resids_3 <- cbind(datasae3$Y1-m3$eblup$Y1, datasae3$Y2-m3$eblup$Y2, datasae3$Y3-m3$eblup$Y3)
-x11()
 layout(matrix(1:3,nrow = 1, byrow = TRUE)) 
 plot(m3$eblup$Y1,resids_3[,1],pch=19,xlab="EBLUPs t=1",ylab="Residuals t=1") 
 plot(m3$eblup$Y2,resids_3[,2],pch=19,xlab="EBLUPs t=2",ylab="Residuals t=2") 
@@ -70,59 +69,77 @@ plot(m3$eblup$Y3,resids_3[,3],pch=19,xlab="EBLUPs t=3",ylab="Residuals t=3")
 These three plots do not provide evidences against the linearity assumption. 
 We now evaluate the normality assumption of residuals, again for the 3 time periods:
  
-```{r figure2}
-x11()
+```{r figure2, message = FALSE, warning = FALSE}
 layout(matrix(1:2,nrow = 1, byrow = TRUE))
 hist(resids_3[,1], probability=TRUE, main="",xlab="Residuals t=1", ylim=c(0,3.7))
-mean_est <- mean(resids_3[,1]) sd_est <- sd(resids_3[,1])
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(resids_3[,1], main="")
-qqline(resids_3[,1], col="red") shapiro.test(resids_3[,1])
+mean_est <- mean(resids_3[,1]) 
+sd_est <- sd(resids_3[,1])
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(resids_3[,1], main="")
+qqline(resids_3[,1], col="red") 
+shapiro.test(resids_3[,1])
 ```
 
-```{r figure3}
-x11()
+
+```{r figure3, message = FALSE, warning = FALSE}
 layout(matrix(1:2,nrow = 1, byrow = TRUE))
-hist(resids_3[,2], probability=TRUE, main="",xlab="Residuals t=2") mean_est <- mean(resids_3[,2])
+hist(resids_3[,2], probability=TRUE, main="",xlab="Residuals t=2") 
+mean_est <- mean(resids_3[,2])
 sd_est <- sd(resids_3[,2])
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(resids_3[,2], main="")
-qqline(resids_3[,2], col="red") shapiro.test(resids_3[,2])
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(resids_3[,2], main="")
+qqline(resids_3[,2], col="red") 
+shapiro.test(resids_3[,2])
 ```
 
-```{r figure4}
-x11()
+
+```{r figure4, message = FALSE, warning = FALSE}
 layout(matrix(1:2,nrow = 1, byrow = TRUE))
-hist(resids_3[,3], probability=TRUE, main="",xlab="Residuals t=3") mean_est <- mean(resids_3[,3])
+hist(resids_3[,3], probability=TRUE, main="",xlab="Residuals t=3") 
+mean_est <- mean(resids_3[,3])
 sd_est <- sd(resids_3[,3])
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(resids_3[,3], main="")
-qqline(resids_3[,3], col="red") shapiro.test(resids_3[,3])
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(resids_3[,3], main="")
+qqline(resids_3[,3], col="red") 
+shapiro.test(resids_3[,3])
 ``` 
 
 In this case, the above histograms and Q-Q normal plots, as well as the Shapiro-Wilk tests, indicate nothing against the normality assumption of residuals. We next evaluate the normality of the random effects. Luckily, the function eblupMFH3 provides the random effects in its output, for the three time periods:
-```{r figure5}
+
+```{r figure5, message = FALSE, warning = FALSE}
 ran_eff <- m3$randomEffect 
-x11()
 layout(matrix(1:2,nrow = 1, byrow = TRUE))
 hist(ran_eff$Y1, probability=TRUE, main="",xlab="Random Effects", ylim = c(0,0.45))
-mean_est <- mean(ran_eff$Y1) sd_est <- sd(ran_eff$Y1)
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(ran_eff$Y1, main="")
-qqline(ran_eff$Y1, col="red") shapiro.test(ran_eff$Y1)
+mean_est <- mean(ran_eff$Y1) 
+sd_est <- sd(ran_eff$Y1)
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(ran_eff$Y1, main="")
+qqline(ran_eff$Y1, col="red") 
+shapiro.test(ran_eff$Y1)
 ```
 
-```{r figure6}
-x11()
-layout(matrix(1:2,nrow = 1, byrow = TRUE)) hist(ran_eff$Y2,probability=TRUE,main="",xlab="Random Effects",breaks=5) mean_est <- mean(ran_eff$Y2)
-sd_est <- sd(ran_eff$Y2)
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(ran_eff$Y2, main="")
-qqline(ran_eff$Y2, col="red") shapiro.test(ran_eff$Y2)
- ```
 
-```{r figure7}
-x11()
+```{r figure6, message = FALSE, warning = FALSE}
+layout(matrix(1:2,nrow = 1, byrow = TRUE)) 
+hist(ran_eff$Y2,probability=TRUE,main="",xlab="Random Effects",breaks=5) 
+mean_est <- mean(ran_eff$Y2)
+sd_est <- sd(ran_eff$Y2)
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(ran_eff$Y2, main="")
+qqline(ran_eff$Y2, col="red") 
+shapiro.test(ran_eff$Y2)
+```
+
+
+```{r figure7, message = FALSE, warning = FALSE}
 layout(matrix(1:2,nrow = 1, byrow = TRUE))
-hist(ran_eff$Y3, probability=TRUE, main="",xlab="Random Effects") mean_est <- mean(ran_eff$Y3)
+hist(ran_eff$Y3, probability=TRUE, main="",xlab="Random Effects") 
+mean_est <- mean(ran_eff$Y3)
 sd_est <- sd(ran_eff$Y3)
-curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) qqnorm(ran_eff$Y3, main="")
-qqline(ran_eff$Y3, col="red") shapiro.test(ran_eff$Y3)
+curve(dnorm(x, mean=mean_est, sd=sd_est), add=TRUE, col="red", lwd=2) 
+qqnorm(ran_eff$Y3, main="")
+qqline(ran_eff$Y3, col="red") 
+shapiro.test(ran_eff$Y3)
 ```
 
 Again, histograms and Q-Q normal plots show no evidences of departure from normality, while the Shapiro-Wilk test also supports normality for all time periods at the usual significance level of 0.05, except for t = 2, which is supported at 0.01 level.
@@ -133,17 +150,19 @@ $m2$MSE$	# To see estimated MSEs of EBLUPs
 
 We next illustrate the use of the function eblupMFH2, which should be used in the case of homoscedastic area-time effects over time. For this, we employ datasae2 from the R package msae (Permatasari and Ubaidillah, 2022). In this new data set, again X1 and X2 are the auxiliary variables, and Y1, Y2, and Y3 are the direct estimates at times 1, 2, and 3, respectively. The elements of the variance-covariance matrix of the sampling errors are provided in the variables v1, v2, v3, v12, v13, and v23. Again, we first load the package and the data set:
 
-```{r load_data2}
+```{r load_data2, message = FALSE, warning = FALSE}
 library(msae) 
 data(datasae2)
 ```
 
 We now fit model MFH2 and check the model assumptions:
 
-```{r run_mfh2}
+```{r run_mfh2, message = FALSE, warning = FALSE}
 Fo <- list(f1=Y1~X1+X2,
 f2=Y2~X1+X2, f3=Y3~X1+X2)
-vardir <- c("v1", "v2", "v3", "v12", "v13", "v23") m2 <- eblupMFH2(Fo, vardir, data=datasae2) m2$eblup	# To see the EBLUPs
+vardir <- c("v1", "v2", "v3", "v12", "v13", "v23") 
+m2 <- eblupMFH2(Fo, vardir, data=datasae2) 
+m2$eblup	# To see the EBLUPs
 m2$MSE	# To see the estimated MSEs of EBLUPs
 ```
 
@@ -178,7 +197,8 @@ In this example, we use the data set spacetime included in the R package sae, wh
 
 We first load the two data sets and obtain the number of areas and of time instants. Then, we apply the function pbmseSTFH() that delivers both, the STFH estimates and their estimated MSEs:
 
-```{r run_STFH}
+```{r run_STFH, message = FALSE, warning = FALSE}
+library(sae)
 data("spacetime") 
 data("spacetimeprox")
 D <- nrow(spacetimeprox)	# number of areas
@@ -190,22 +210,26 @@ The bootstrap procedure for MSE estimation displays the iteration number for eac
 Bootstrap procedure with B = 100 iterations starts. 
 Once we have obtained the STFH estimators, we compute their CVs, and the same is done for the direct estimators. We print the results for the last time instant (T = 3):
  
-```{r cv_STFH}
-cv.STFH <- 100 * sqrt(STFH$mse) / STFH$est$eblup cv.DIR <- 100 * sqrt(spacetime$Var) / spacetime$Y
+```{r cv_STFH, message = FALSE, warning = FALSE}
+cv.STFH <- 100 * sqrt(STFH$mse) / STFH$est$eblup 
+cv.DIR <- 100 * sqrt(spacetime$Var) / spacetime$Y
 results <- data.frame(Area = spacetime$Area, Time = spacetime$Time,
 DIR = spacetime$Y, eblup.STFH = STFH$est$eblup, cv.DIR, cv.STFH)
-results.lasttime <- results[results$Time == 3, ] print(results.lasttime, row.names = FALSE)
+results.lasttime <- results[results$Time == 3, ] 
+print(results.lasttime, row.names = FALSE)
 ```
 
 Next we plot the STFH and the direct estimates together for comparison. Additionally, we plot their corresponding CVs. 
 The following R code generates both plots:
 
-```{r figure8}
-x11()
+```{r figure8, message = FALSE, warning = FALSE}
 layout(1)
-results.lasttime <- results.lasttime[order(results.lasttime$cv.DIR), ] plot(results.lasttime$DIR, type = "n", xlab = "area (time=3)",
-ylab = "Estimate",ylim = c(0.05, 0.45), cex.axis = 1.5, cex.lab = 1.5, xaxt = "n")
-axis(1, 1:11, results.lasttime$Area, cex.axis = 1.5) points(results.lasttime$DIR, type = "b", col = 1, lwd = 2, pch = 1) points(results.lasttime$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) legend("top", legend = c("Direct", "EBLUP STFH"), ncol = 2, col = c(1, 4), lwd = rep(2, 2), pch = c(1, 4), cex = 1.3)
+results.lasttime <- results.lasttime[order(results.lasttime$cv.DIR), ] 
+plot(results.lasttime$DIR, type = "n", xlab = "area (time=3)", ylab = "Estimate",ylim = c(0.05, 0.45), cex.axis = 1.5, cex.lab = 1.5, xaxt = "n")
+axis(1, 1:11, results.lasttime$Area, cex.axis = 1.5) 
+points(results.lasttime$DIR, type = "b", col = 1, lwd = 2, pch = 1) 
+points(results.lasttime$eblup.STFH, type = "b", col = 4,lwd = 2,pch = 4) 
+legend("top", legend = c("Direct", "EBLUP STFH"), ncol = 2, col = c(1, 4), lwd = rep(2, 2), pch = c(1, 4), cex = 1.3)
 plot(results.lasttime$cv.DIR, type = "n", xlab = "area (time=3)", ylab="CV",cex.axis = 1.5, cex.lab = 1.5, xaxt = "n")
 axis(1, 1:11, results.lasttime$Area, cex.axis = 1.5) 
 points(results.lasttime$cv.DIR, type = "b", col = 1, lwd = 2, pch = 1) 
@@ -218,25 +242,27 @@ The left figure shows the STFH estimators, together with the direct estimates fo
 We also apply basic univariate FH models for each time instant, that is, crosssectionally, to analyze the differences with the results obtained from the STFH model.
 For this, we first select the data corresponding to each time instant and then call the function mseFH() using those separate data sets. STFH estimates are stored in an additional column of the data frame results:
 
-```{r compare_results}
+```{r compare_results, message = FALSE, warning = FALSE}
 data.time1<-spacetime[spacetime$Time==1,] 
-data.time2<-spacetime[spacetime$Time==2,] data.time3<-spacetime[spacetime$Time==3,]
+data.time2<-spacetime[spacetime$Time==2,] 
+data.time3<-spacetime[spacetime$Time==3,]
 eblup.FH.res.time1<-mseFH(Y~X1+X2,vardir=Var,data=data.time1) 
 eblup.FH.time1<-eblup.FH.res.time1$est$eblup 
 results$eblup.FH[results$Time==1]<-eblup.FH.time1
 eblup.FH.res.time2<-mseFH(Y~X1+X2,vardir=Var,data=data.time2) 
-eblup.FH.time2<-eblup.FH.res.time2$est$eblup r
-esults$eblup.FH[results$Time==2]<-eblup.FH.time2
+eblup.FH.time2<-eblup.FH.res.time2$est$eblup 
+results$eblup.FH[results$Time==2]<-eblup.FH.time2
 eblup.FH.res.time3<-mseFH(Y~X1+X2,vardir=Var,data=data.time3) 
-eblup.FH.time3<-eblup.FH.res.time3$est$eblup r
+eblup.FH.time3<-eblup.FH.res.time3$est$eblup 
 results$eblup.FH[results$Time==3]<-eblup.FH.time3
 ```
+
 Let us now plot the STFH estimates, together with direct and cross-sectional FH estimates, for the first area (coded as Area=2) over the three time instants:
 
-```{r figure9}
+```{r figure9, message = FALSE, warning = FALSE}
 results.A1 <- results[results$Area == 2, ]
-x11()
-layout(1) k<-3
+layout(1) 
+k<-3
 m<-min(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) 
 M<-max(results.A1$DIR,results.A1$eblup.STFH,results.A1$eblup.FH) 
 plot(1:3,results.A1$DIR, type = "n", xlab = "Time",
@@ -250,10 +276,10 @@ col = c(1,3,4),lwd = rep(2,3), pch = c(1,3,4), cex = 1.3)
 ```
 
 Finally, we repeat the process for the last area (coded as Area=46): 
-```{r figure10}
+```{r figure10, message = FALSE, warning = FALSE}
 results.A11 <- results[results$Area == 46, ]
-x11()
-layout(1) k<-3
+layout(1) 
+k<-3
 m<-min(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) 
 M<-max(results.A11$DIR,results.A11$eblup.STFH,results.A11$eblup.FH) 
 plot(1:3,results.A11$DIR, type = "n", xlab = "Time",
@@ -267,7 +293,3 @@ col = c(1,3,4), lwd = rep(2,3), pch = c(1,3,4), cex = 1.3)
 ```
 
 We did already see in the previous examples that direct estimators are unstable across areas. We can see that they are also the most unstable over time. Cross-sectional FH estimators applied for each time instant t = 1, 2, 3, are more stable across areas, but not necessarily over time. Figure 14 shows that STFH estimators are smoother over time than both, direct and cross-sectional FH estimates.
-
-
-
-
