@@ -1,9 +1,9 @@
-# Fay–Herriot (TODO)
+# Fay–Herriot 
 
 This chapter describes how to run the simple Fay-Herriot using the real data from Ghana. If there is a need to consider the temporal autocorrelation or spacial correlation, please refer to the next chapter.  
 
 FH estimation procedure:
-Step 1 Compute the selected direct area estimators ¥, and estimators of their corresponding sampling variances (perhaps previously smoothed)
+Step 1 Compute the selected direct area estimators Y, and estimators of their corresponding sampling variances (perhaps previously smoothed)
 
 Step 2 Select the aggregated auxiliary variables at the area level for the FH model. A simple approach is to perform a model selection procedure in a linear regression
 model without the area effects, e.g., using stepwise selection, exhaustive search or LASSO.
@@ -18,25 +18,36 @@ Step 5 If the model assumptions hold, using the above direct estimates, estimate
 and their estimated MSEs.
 
 ## Data and variables preparation
-The example code in this guideline uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024.).
+The example code in this guideline uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024).
 
 ### Load required libraries
-```{r libraries}
-library(raedstata13)      # For reading .dta files
+
+The following is the list of libraries required to run the codes. If it is the first time to use the library, first you need to install the packages. 
+
+```{r libraries, message = FALSE, warning = FALSE}
+library(readstata13)      # For reading .dta files
 library(dplyr)      # For data manipulation
 library(sae)       # For SAE modeling
 library(car)        # For VIF calculation
 library(ggplot2)    # For histogram and Q-Q plots
 library(fastDummies) # Create dummy variables
+library(stringr)
 ```
 
 ### Load the dataset
-```{r load_data}
-data <- read.dta13("FHcensus_district.dta") 
+
+First, we need to download the dataset "FHcensus_district.dta" which contains the list of aggregated auxiliary variables. 
+```{r load_data, message = FALSE, warning = FALSE}
+
+data <- read.dta13("https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/input/FHcensus_district.dta")
+
 ```
 
 ### Define the variable list
-```{r list_variable}
+
+The following is the list of candidate auxiliary variables we use for this example.
+
+```{r list_variable, message = FALSE, warning = FALSE}
 vars <- c("male", "head_age", "age", "depratio", "head_ghanaian", "ghanaian",
           "head_ethnicity1", "head_ethnicity2", "head_ethnicity3", "head_ethnicity4",
           "head_ethnicity5", "head_ethnicity6", "head_ethnicity7", "head_ethnicity8",
@@ -54,36 +65,34 @@ vars <- c("male", "head_age", "age", "depratio", "head_ghanaian", "ghanaian",
           "toilet4", "toilet5", "solidwaste1", "solidwaste2", "solidwaste3")
 ```
 
-### Normalize variables
-```{r normalize_variable}
-data <- data %>%
-  mutate(across(all_of(vars), ~ ifelse(!is.na(.), (.-mean(.))/sd(.), NA)))
-```
+### Normalize variables and create D variable
 
-### Create D variable and prepare for merging
-```{r normalize_variable}
+First we normalize all the auxiliary variables, and then create the area ID, which in this case is the combination of region and district. 
+```{r normalize_variable, message = FALSE, warning = FALSE}
 data <- data %>%
+  mutate(across(all_of(vars), ~ ifelse(!is.na(.), (.-mean(.))/sd(.), NA))) %>%
   mutate(D = region * 100 + district) %>% 
   dplyr::select(-district) %>%
   rename(district = D)
 ```
 
-### Merge with direct estimates
-```{r merge}
-direct_data <- read.dta13("direct_glss7.dta")
+
+### Merge with direct estimates and create region indicators
+
+The direct estimate of Y is already prepared in the seperate dataset "direct_glss7.dta" (see the previous chapter for the details). Now, we merge this data of direct estiamte with the auxiliary variables. Then, create the regional dummies to be added as auxiliary variables.
+
+```{r merge, message = FALSE, warning = FALSE}
+direct_data <- read.dta13("https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/direct_glss7.dta")
 data <- data %>%
   left_join(direct_data, by = "district") 
-```
-
-### Create region indicators
-```{r region}
 data <- dummy_cols(data,select_columns = "region.x")
 data <- data %>% rename_with(~str_replace(.,"region.x_",replacement = "thereg"),starts_with("region.x_")) 
 hhvars <- c(vars,"thereg1","thereg2","thereg3","thereg4","thereg5","thereg6","thereg7","thereg8","thereg9")
 ```
 
+
 ### Variance smoothing
-```{r variance_smoothing}
+```{r variance_smoothing, message = FALSE, warning = FALSE}
 data <- data %>%
   mutate(
     log_s2 = log(dir_fgt0_var),
@@ -113,34 +122,36 @@ data <- data %>%
 
 ## Fay-Herriot SAE modeling
 
-### Model creation
+### Model preparation
 FH does not run if there is any missing value in the dataset, and therefore, any variable with missing value should be removed in advance.
-```{r fh_model}
+```{r fh_model, message = FALSE, warning = FALSE}
 formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars, collapse = "+")))
 data2 <- data[,c(hhvars,"dir_fgt0", "dir_fgt0_var","region.y","district")]
 data3 <- na.omit(data2)
 ```
 
 ### Check the perfect multicollinearity
-With eblupFH, the model does not run if there is perfect multicollinearity between variables, so we need to omit them in advance.
+With eblupFH, the model does not run if there is perfect multicollinearity between variables, so we need to omit them in advance. the function alias() checks the multicollinearity. According to the result, head_birthplace is causing the multicollinearity, and therefore, we omit "head_birthplace8".
 
-```{r check_multicollinearity}
+```{r check_multicollinearity, message = FALSE, warning = FALSE}
 alias( formula, data = data3)
 hhvars2 <- setdiff(hhvars, "head_birthplace8")
 ```
 
-### Model creation2
-```{r fh_model2}
+## Model creation and variable selection
+
+In this example, we use the function eblupFH to calculate the FH estimate.
+
+```{r fh_model2, message = FALSE, warning = FALSE}
 formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars2, collapse = "+")))
 fh_model <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "FH")
 ```
 
-#Iterative refinement
-First, we omit the variables in the model of which the p-value is not significant.
+### Variable selection
+Here, we omit the variables in the model of which the p-value is not significant.
 
-```{r fh_model_refinement1}
+```{r fh_model_refinement1, message = FALSE, warning = FALSE}
 for (z_threshold in seq(0.8,0.05, by = -0.05)) {
-  print(z_threshold)
   #Fit Fay-Herriot model
   formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars2, collapse = "+")))
   fh_model <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "FH")
@@ -153,7 +164,6 @@ for (z_threshold in seq(0.8,0.05, by = -0.05)) {
   break
   }
   for (x in hhvars2) {
-    print(x)
     # Fit the Fay-Herriot model with current variables
     fh_model <- eblupFH(as.formula(paste("dir_fgt0 ~", paste(hhvars2, collapse = " + "))), 
                         vardir = dir_fgt0_var, method = "FH", data = data3)
@@ -172,8 +182,9 @@ for (z_threshold in seq(0.8,0.05, by = -0.05)) {
 }
 ```
 
-### Final model without non-significant variables
-```{r fh_model3}
+
+### The model without non-significant variables
+```{r fh_model3, message = FALSE, warning = FALSE}
 formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars2, collapse = "+")))
 fh_model_updated <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "FH")
 ```
@@ -181,7 +192,7 @@ fh_model_updated <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method 
 ###  Function to remove the variables with high VIF
 Next, we omit the variables with strong multicolliearity. For that, we create the function stepwise_vif.
 
-```{r vif_function}
+```{r vif_function, message = FALSE, warning = FALSE}
 stepwise_vif <- function(data, predictors, weight, threshold) {
   
   # Select predictor variables 
@@ -209,18 +220,17 @@ stepwise_vif <- function(data, predictors, weight, threshold) {
 }
 ```
 
-### Apply the function to remove the variables witth high multicollinearity
-```{r remove_vif}
+### Apply the function to remove the variables with high multicollinearity
+```{r remove_vif, message = FALSE, warning = FALSE}
 hhvars3 <- stepwise_vif(data3, hhvars2, weight = rep(1,nrow(data3)), threshold = 5)
 print(hhvars3)
 ```
 
 ### One final removal of non-significant covariates
-After omitting the variables with high multicollinearity, we check again the p-value of each variable, and omit it if it is not significant.
+After omitting the variables with high multicollinearity, we check again the p-value of each variable, and omit those if they are not significant.
 
-```{r fh_model_refinement2}
+```{r fh_model_refinement2, message = FALSE, warning = FALSE}
 for (z_threshold in seq(0.8,0.0001, by = -0.05)) {
-  print(z_threshold)
   #Fit Fay-Herriot model
   formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars3, collapse = "+")))
   fh_model <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "REML", PRECISION = 1e-10)
@@ -229,12 +239,11 @@ for (z_threshold in seq(0.8,0.0001, by = -0.05)) {
   #Find the smallest absolute z-value
   min_zval <- min(zvals)
   pvalue <- 2 * pnorm(-min_zval)
-  print(pvalue)
  
   if(2 * pnorm(-min_zval) > z_threshold) {
  
   for (x in hhvars3) {
-    print(x)
+    
     # Fit the Fay-Herriot model with current variables
     fh_model <- eblupFH(as.formula(paste("dir_fgt0 ~", paste(hhvars3, collapse = " + "))), 
                         vardir = dir_fgt0_var, method = "REML", data = data3, PRECISION = 1e-10)
@@ -254,9 +263,9 @@ for (z_threshold in seq(0.8,0.0001, by = -0.05)) {
 ```
 
 ### Comparison of the different FH methods
-The type of FH model can be mainly three, ML, REML, and FH. We check the performance of each model, and select the one withthe lowest log likelihood. It is REML in this case.
+The type of FH model can be mainly three, ML, REML, and FH. We check the performance of each model, and select the one with the lowest log likelihood. It is REML in this case.
 
-```{r fh_model_comparison}
+```{r fh_model_comparison, message = FALSE, warning = FALSE}
 formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars3, collapse = "+")))
 fh_model_ML <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "ML")
 fh_model_REML <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "REML")
@@ -265,7 +274,7 @@ fh_model_FH <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "FH
 
 
 ### Obtain SAE-FH estimates
-```{r fh_model_final}
+```{r fh_model_final, message = FALSE, warning = FALSE}
 final_model <- eblupFH(formula,vardir = dir_fgt0_var, data = data3, method = "REML", PRECISION = 1e-13)
 mse <- mseFH(formula,vardir = dir_fgt0_var, data = data3, method = "REML", PRECISION = 1e-13)
 data4 <- data3 %>% mutate(
@@ -273,10 +282,12 @@ data4 <- data3 %>% mutate(
   fh_fgt0_se = sqrt(mse$mse)
   ) 
 ```
+
+
 ## Check the normality of area effect and errors
 
 ### Calculate Area effect
-```{r fh_model_area_effect}
+```{r fh_model_area_effect, message = FALSE, warning = FALSE}
 data5 <- data4 %>% mutate(xb = predict(lm(formula, data = data4))) %>%
   mutate(u_d = fh_fgt0 - xb)
 ggplot(data5, aes(x = u_d)) + geom_histogram(aes(y = ..density..),bins = 30, fill = "lightblue", color = "black") + stat_function(fun = dnorm, args = list(mean = mean(data5$u_d, na.rm=T), sd = sd(data5$u_d, na.rm=T)), color = "red")+
@@ -284,25 +295,27 @@ ggplot(data5, aes(x = u_d)) + geom_histogram(aes(y = ..density..),bins = 30, fil
 ```
 
 ### Draw the Q_Q plot for normality checks of FH area effects
-```{r qqplot_area_effects}
+```{r qqplot_area_effects, message = FALSE, warning = FALSE}
 ggplot(data5, aes(sample = u_d)) + stat_qq() + stat_qq_line(color = "red") + ggtitle("Q-Q Plot of FH Area Effects") + theme_minimal()
 ```
 
 ### Calcalate Errors
-```{r fh_model_errors}
+```{r fh_model_errors, message = FALSE, warning = FALSE}
 data5 <- data5 %>% mutate(e_d = dir_fgt0 - fh_fgt0)
 ggplot(data5, aes(x = e_d)) + geom_histogram(aes(y = ..density..),bins = 30, fill = "lightblue", color = "black") + stat_function(fun = dnorm, args = list(mean = mean(data5$e_d, na.rm=T), sd = sd(data5$e_d, na.rm=T)), color = "red")+
   ggtitle("Histogram of FH Error") + theme_minimal()
 ```
 
 ### Q_Q plot for normality checks of errors
-```{r qqplot_errors}
+```{r qqplot_errors, message = FALSE, warning = FALSE}
 ggplot(data5, aes(sample = e_d)) + stat_qq() + stat_qq_line(color = "red") + ggtitle("Q-Q Plot of FH Error") + theme_minimal()
 ```
+
 ## Save the final data
 
 ### Save and output Final dataset
-```{r save}
-final_data <- data5 %>% select(region.y, district, fh_fgt0, fh_fgt0_se)
-write_csv(final_data, "FH_sae_poverty.csv")
+```{r save, message = FALSE, warning = FALSE}
+final_data <- data5 %>% dplyr::select(region.y, district, fh_fgt0, fh_fgt0_se)
+write.csv(final_data, "FH_sae_poverty.csv")
 ```
+
