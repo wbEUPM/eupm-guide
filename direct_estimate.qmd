@@ -1,6 +1,6 @@
 # Creating the direct estimate
 
-This chapter shows how to create the file of direct estimate both for regions and districts, using the example data of Ghana. 
+This chapter shows how to create the file of direct estimate both for regions and districts, using the example data of [Ghana](https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/input/survey_2017.dta). 
 
 ```{r library, message = FALSE, warning = FALSE}
 library(haven)
