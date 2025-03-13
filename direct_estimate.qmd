@@ -1,3 +1,7 @@
+# Creating the direct estimate
+
+This chapter shows how to create the file of direct estimate both for regions and districts, using the example data of Ghana. 
+
 ```{r library, message = FALSE, warning = FALSE}
 library(haven)
 library(dplyr)
