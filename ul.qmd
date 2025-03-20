@@ -13,39 +13,32 @@ pacman::p_load(povmap, emdi, dplyr, data.table, glmnet, glmmLasso)
 
 ```
 
-
 ### Introduction
 
-In this section, we will present an implementation of the Empirical Best Prediction (EBP) unit modelling approach in R based on World Bank's Small Area Estimation Guidelines, [@corral2022guidelines], as well as [@molina2010small] and [@rao2015small]. Similar to the disclaimer made in the previous section, this practical manual does not present a theoretical statistical primer on unit level poverty mapping. Rather, it presents a combination of practical and simple R scripts with appropriate explanations to expose the simplicity of performing these tasks in R to the user. The studies previously cited are excellent starting points for those interested in understanding the theoretical underpinnings for the code being presented here. 
+In this section, we will present an implementation of the Empirical Best Prediction (EBP) unit modelling approach in R based on World Bank's Small Area Estimation Guidelines, [@corral2022guidelines], as well as [@molina2010small] and [@rao2015small]. Similar to the disclaimer made in the previous section, this practical manual does not present a theoretical statistical primer on unit level poverty mapping. Rather, it presents a combination of practical and simple R scripts with appropriate explanations to expose the simplicity of performing these tasks in R to the user. The studies previously cited are excellent starting points for those interested in understanding the theoretical underpinnings for the code being presented here.
 
-This chapter is subdivided as follows to show the whole game of the EBP linear mixed effect modelling approach: 
+This chapter is subdivided as follows to show the whole game of the EBP linear mixed effect modelling approach:
 
-  (A) The Data: In this subsection, we present a brief checklist of data items needed for the unit level poverty mapping as well as present the specific data to be used in this chapter. 
-  
-  (B) Data Preparation: Here we present the process of transforming the data in (A) into what is needed for variable selection and then estimating a unit level poverty map
-  
-  (C) Variable Selection: We present the LASSO methodology of the GLMNET, glmmLasso and hdm R packages as well as another implementation that uses the stepwise model
-  
-  (D) EBP Unit Level Model Estimation: Having selected the set of variables, we proceed to use the povmap package's ebp function to estimate the poverty map. 
-  
-  (E) Post Estimation Diagnostics: We proceed to test model assumptions of the EBP linear mixed effects model and present functions within the povmap package for producing report ready figure and tables. 
-  
-  
+(A) The Data: In this subsection, we present a brief checklist of data items needed for the unit level poverty mapping as well as present the specific data to be used in this chapter.
+
+(B) Data Preparation: Here we present the process of transforming the data in (A) into what is needed for variable selection and then estimating a unit level poverty map
+
+(C) Variable Selection: We present the LASSO methodology of the GLMNET, glmmLasso and hdm R packages as well as another implementation that uses the stepwise model
+
+(D) EBP Unit Level Model Estimation: Having selected the set of variables, we proceed to use the povmap package's ebp function to estimate the poverty map.
+
+(E) Post Estimation Diagnostics: We proceed to test model assumptions of the EBP linear mixed effects model and present functions within the povmap package for producing report ready figure and tables.
+
 ### The Data
 
-The main idea of SAE is to combine multiple data sources. Typically, there is a survey data set and a census or administrative/register dataset both at an individual and/or household unit level. The target variable (typically household welfare/income for poverty mapping) is available in the survey but not in the census data. The goal of the exercise is to estimate welfare/income for each unit within the census or administrative register dataset by developing a model of welfare or income within the survey. It is important that the outcome variable has the same definition within the census or administrative dataset as the case maybe. It would be inappropriate to estimate household welfare/income within the survey and use the same model to predict income at the individual level of the census. Below is a brief checklist of data requirements needed for unit level poverty mapping with the povmap R package: 
+The main idea of SAE is to combine multiple data sources. Typically, there is a survey data set and a census or administrative/register dataset both at an individual and/or household unit level. The target variable (typically household welfare/income for poverty mapping) is available in the survey but not in the census data. The goal of the exercise is to estimate welfare/income for each unit within the census or administrative register dataset by developing a model of welfare or income within the survey. It is important that the outcome variable has the same definition within the census or administrative dataset as the case maybe. It would be inappropriate to estimate household welfare/income within the survey and use the same model to predict income at the individual level of the census. Below is a brief checklist of data requirements needed for unit level poverty mapping with the povmap R package:
 
-- A unit level survey `data.frame` object with individual and household characteristics including the target area variable, outcome variable (welfare aggregates, income per capita etc)
+-   A unit level survey `data.frame` object with individual and household characteristics including the target area variable, outcome variable (welfare aggregates, income per capita etc)
 
-- A unit census/administrative register `dataframe` object with individual and household characteristics including the target area variable. The outcome variable is typically missing since the topic of this tutorial is estimating it. 
-
-- All target areas within the survey must be present within the census. The `emdi::ebp()` and `povmap::ebp()` function calls will result in an error message if values in the target area variable are missing within the survey, this includes `NA` values within the survey target area column that are not in the census' target area column. 
-
-- The target area variables (i.e. the variable describing areas where poverty rates will be estimated) should be `integer` class variable. The reason for this will made obvious later in this tutorial. 
+-   A unit census/administrative register `dataframe` object with individual and household characteristics including the target area variable. The outcome variable is typically missing since the topic of this tutorial is estimating it.
 
 
-For the purposes of this tutorial, we will use the European Union Statistics on Income and Living Conditions (EU-SILC) in Austria from 2006. Please see [@kreutzmann2019r] for the full description of the dataset 
-
+For the purposes of this tutorial, we will use the European Union Statistics on Income and Living Conditions (EU-SILC) in Austria from 2006. Please see [@kreutzmann2019r] for the full description of the dataset
 
 ```{r}
 
@@ -55,46 +48,108 @@ survey_dt <- eusilcA_smp
 
 census_dt <- eusilcA_pop ## ignore the eqIncome variable that has been left in the eusilcA_pop dataset 
 
+#### the survey dataset
+head(survey_dt)
 
-
-
+#### the census dataset
+head(census_dt)
 
 
 ```
 
+-   All target areas within the survey must be present within the census. The `emdi::ebp()` and `povmap::ebp()` function calls will result in an error message if values in the target area variable are missing within the survey, this includes `NA` values within the survey target area column that are not in the census' target area column.
+
+```{r}
+
+### counting the number of districts (i.e. target areas) within the survey that are not a subset of the census districts. 
+
+x <- unique(survey_dt$district)[!unique(survey_dt$district) %in% unique(census_dt$district)]
+
+length(x) ### there appear to be no areas as such
+
+
+```
+
+Other important data for poverty mapping include: 
+
+- A shapefile : While a table of poverty rates would suffice, a picture is worth more than a 1000 words and as such `emdi` and `povmap` have functionality for converting the resulting estimates into a map using the `plot()` function within the `emdi` and `povmap` packages. It is essential that the target area variable in the census and survey (which by now should be consistent between the survey and census) should also match with the target area variable within the shapefile in order to use the `plot()` function within `emdi` or `povmap`. 
+
+Once the following steps have been taken, the next stage is to prepare the set of variables for estimating a model of household welfare and predicting the consumption aggregates into the census.
 
 ### Data Preparation for unit level model
 
--   creating the variables that will correlate will household level welfare
+In this section, we describe a few common techniques for creating variables with strong correlations to the outcome variable. This includes creating: 
+
+- variable interactions
+
+- target area average variables
+
+- dummy variables (at the lowest level of national representativeness, regional dummies, as well as other dummy variables to capture some non-linear relationships between the certain variables and the outcome variable)
+
+First a little bit of housekeeping is in order: 
+
+```{r}
+
+### subset the set of candidate variables into a character vector
+
+candidate_vars <- colnames(survey_dt)[!colnames(survey_dt) %in% 
+                                        c("eqIncome", "weight", 
+                                          "state", "district")]
+
+### we have to ensure candidate variables are numbers (numeric or integer class)
+##### the only variable that doesnt meet this criteria is the gender variable
+survey_dt <- 
+  survey_dt %>%
+  mutate(gender = ifelse(gender == "female", 1, 0))
+
+```
+
+#### Creating Variable Interactions
+
+
+```{r}
+
+### show the function we have used to automate interactions between variables
+
+```
+
+#### Computing target area averages
+It is often useful to compute target area averages to improve the explanation of intra-area variation in the dependent variable. Here is some code we have used in the past to do this: 
+
+```{r}
+
+#### 
+
+survey_dt %>%
+  dplyr::select(candidate_vars) %>%
+  group_by(district) %>%
+  summarise(across(candidate_vars))
+
+```
+
+
 
 ### Variable Selection
 
-- Checking that each variable has similar distribution between the survey and census and dropping variables that do not meet
-    (a function has been written to do this test better than the ebp_test_means() function in povmap)
-- Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)
-- Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)
-- Cross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)
+-   Checking that each variable has similar distribution between the survey and census and dropping variables that do not meet (a function has been written to do this test better than the ebp_test_means() function in povmap)
+-   Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)
+-   Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)
+-   Cross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)
 
 ### EBP Unit Level Model Estimation
 
-- Start with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e. 
-    - all target areas (domain argument) in the survey must be in the census
-    - domain argument must be integer class
-    - remove all missing observations in survey and census
-- Implementation of the ebp() function call
-- Detailed description of the ebp class object which is returned
+-   Start with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e.
+    -   all target areas (domain argument) in the survey must be in the census
+    -   domain argument must be integer class
+    -   remove all missing observations in survey and census
+-   Implementation of the ebp() function call
+-   Detailed description of the ebp class object which is returned
 
 ### Post Estimation Diagnostics
 
-- Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)
-- Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis
-for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also 
-include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms
-from ebp object.  
-- Check on model validity: Create a plot to show how poverty rates vary at each ventile i.e. at 5% poverty line increments. This is to show how to check the quality
-of model prediction without the added bias of out of sample prediction
-- Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have
-to be the get the same level of precision that SAE now gives us with the census data. 
-- Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually
-the regional level in Africa. 
-- Plotting the poverty map using the ebp object and the shapefile 
+-   Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)
+-   Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.\
+-   Check on model validity: Create a plot to show how poverty rates vary at each ventile i.e. at 5% poverty line increments. This is to show how to check the quality of model prediction without the added bias of out of sample prediction
+-   Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.
+-   Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.
+-   Plotting the poverty map using the ebp object and the shapefile
