@@ -8,7 +8,9 @@ if (sum(installed.packages()[,1] %in% "pacman") != 1) {
   
 }
 
-pacman::p_load(povmap, emdi, dplyr, data.table, glmnet, glmmLasso)
+pacman::p_load(povmap, emdi, dplyr, tidyr,
+               data.table, glmnet, glmmLasso,
+               MASS, ggplot2)
 
 
 ```
@@ -102,14 +104,71 @@ survey_dt <-
   survey_dt %>%
   mutate(gender = ifelse(gender == "female", 1, 0))
 
+census_dt <- 
+  census_dt %>%
+  mutate(gender = ifelse(gender == "female", 1, 0))
+
 ```
 
 #### Creating Variable Interactions
 
-
 ```{r}
 
 ### show the function we have used to automate interactions between variables
+
+#' A function to interact a variables with a set of variables
+#' 
+#' @param dt a data.frame
+#' @param interacter_var the variable to be interacted
+#' @param var_list the set of variables to interact with
+#' 
+#' @export
+#' 
+
+create_interactions <- function(dt, interacter_var, var_list) {
+  # Ensure dt is a data.table
+  if (!"data.frame" %in% class(dt)) {
+    dt <- as.data.table(dt)
+  }
+  
+  # Check if interacter_var exists in the dataset
+  if (!(interacter_var %in% names(dt))) {
+    stop(paste(interacter_var, "not found in dataset"))
+  }
+  
+  # Check if var_list contains valid variables that exist in the dataset
+  if (any(!var_list %in% names(dt))) {
+    stop("Some variables in var_list are not found in the dataset.")
+  }
+  
+  # Create an empty data.table to store interactions
+  int_dt <- data.frame(matrix(nrow = nrow(dt)))
+  
+  # Loop over var_list to create interaction terms
+  for (var in var_list) {
+    interaction_name <- paste0(var, "_X_", interacter_var)
+    int_dt[[interaction_name]] <- dt[[var]] * dt[[interacter_var]]
+  }
+  
+  int_dt <- int_dt[, -1]
+  
+  return(int_dt)
+  
+}
+
+survey_dt <- 
+  cbind(survey_dt, 
+        create_interactions(dt = survey_dt,
+                            interacter_var = "gender",
+                            var_list = candidate_vars[!candidate_vars %in% "gender"]))
+
+census_dt <- 
+  cbind(census_dt, 
+        create_interactions(dt = census_dt,
+                            interacter_var = "gender",
+                            var_list = candidate_vars[!candidate_vars %in% "gender"]))
+
+
 
 ```
 
@@ -118,12 +177,57 @@ It is often useful to compute target area averages to improve the explanation of
 
 ```{r}
 
-#### 
+#### compute target area level averages to include in the model
+candidate_vars <- c(candidate_vars, 
+                    colnames(survey_dt)[grepl("_X_", colnames(survey_dt))])
 
-survey_dt %>%
-  dplyr::select(candidate_vars) %>%
-  group_by(district) %>%
-  summarise(across(candidate_vars))
+survey_dt <- 
+  survey_dt %>%
+  as.data.table() %>%
+  .[, paste0(candidate_vars, "_targetmean") := 
+      lapply(.SD, 
+             weighted.mean, 
+             w = weight, 
+             na.rm = TRUE), 
+    .SDcols = candidate_vars, 
+    by = "district"]
+
+census_dt <- 
+  census_dt %>%
+  as.data.table() %>%
+  .[, paste0(candidate_vars, "_targetmean") := 
+      lapply(.SD, 
+             weighted.mean, 
+             na.rm = TRUE), 
+    .SDcols = candidate_vars, 
+    by = "district"]
+
+#### create regional dummies
+survey_dt <- 
+  survey_dt %>%
+  mutate(dummy = 1) %>%
+  pivot_wider(names_from = state,
+              names_prefix = "state_",
+              values_from = dummy,
+              values_fill = list(dummy = 0)) %>%
+  dplyr::select(starts_with("state_")) %>%
+  cbind(survey_dt)
+
+census_dt <- 
+  census_dt %>%
+  mutate(dummy = 1) %>%
+  pivot_wider(names_from = state,
+              names_prefix = "state_",
+              values_from = dummy,
+              values_fill = list(dummy = 0)) %>%
+  dplyr::select(starts_with("state_")) %>%
+  cbind(census_dt)
+
+
+#### lets update the set of candidate variables
+candidate_vars <- c(candidate_vars, 
+                    colnames(survey_dt)[grepl("state_", colnames(survey_dt))])
+
 
 ```
 
@@ -135,6 +239,199 @@ survey_dt %>%
 -   Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)
 -   Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)
 -   Cross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)
+
+```{r, fig.width = 8}
+
+#### let's create the set of outcome variables for the different potential income transformations we might be interested in doing
+
+###### log transformation
+survey_dt <- 
+  survey_dt %>%
+  mutate(logeqIncome = log(eqIncome))
+
+###### boxcox transformation
+#### apply box-cox transformation
+boxcox_result <- MASS::boxcox(lm(eqIncome ~ 1, data = survey_dt), 
+                              lambda = seq(-2, 2, by = 0.1))
+
+lambda_opt <- boxcox_result$x[which.max(boxcox_result$y)]
+cat("Optimal Lambda:", lambda_opt, "\n")
+
+## Apply the transformation manually
+if (lambda_opt == 0){
+  
+  survey_dt <- 
+    survey_dt %>%
+    mutate(bcxeqIncome = log(eqIncome))
+  
+} else {
+  
+  survey_dt <- 
+    survey_dt %>%
+    mutate(bcxeqIncome = (eqIncome^lambda_opt - 1) / lambda_opt)
+
+}
+
+#### compare the distributions of the outcome variables created
+p1 <- 
+survey_dt %>%
+  ggplot() + 
+  geom_histogram(aes(x = logeqIncome), 
+                 binwidth = 0.5, 
+                 fill = "blue", 
+                 color = "black") + 
+  labs(title = "Log Income Distribution") + 
+  theme_minimal()
+
+p2 <- 
+survey_dt %>%
+  ggplot() + 
+  geom_histogram(aes(x = bcxeqIncome), 
+                 binwidth = 0.5, 
+                 fill = "red", 
+                 color = "black") + 
+  labs(title = "Box-Cox Income Distribution") + 
+  theme_minimal()
+
+gridExtra::grid.arrange(grobs = list(p1, p2), nrow = 1)
+
+```
+
+
+```{r}
+
+#' A function for variable selection using the GLMNET R package
+#' 
+#' This function acts as a wrapper to the GLMNET R package which performs variable selection with nfold cross validation. 
+#' 
+#' @details This function cleans the data `dt` first by standardizing the predictors, dropping columns with missing values, very low variance (near
+#' zero variance), highly correlated variables based on a certain `correlation_threshold`. The function also drops variables with an high percentage #' of zeros based on a `sparsity_threshold`. It then fits the lasso regression with the GLMNET package before returning the best combination of
+#' predictive variables based on the `lambda_type` selection criteria. 
+#' 
+#' 
+#' @param dt data.frame or data.table
+#' @param candidate_vars character, the set of potential predictors within `dt`
+#' @param y character, the variable name of the outcome variable within `dt`
+#' @param weights character, weight variable name
+#' @param alpha integer, 1 for LASSO and 0 for ridge regression
+#' @param nfolds integer, the number of cross fold validations to perform
+#' @param seed integer, randomization seed 
+#' @param lambda_type, either "lambda.min" or "lambda.1se". see `glmnet::glmnet()` for more information
+#' @param correlation_threshold numeric, the threshold for dropping correlated variables (value between 0 and 1)
+#' @param variance_threshold numeric, threshold for dropping variables that appear almost constant by specifying a minimum variance that must be met
+#' @param sparsity_threshold numeric, threshold for dropping sparse variables
+#' 
+#' @export
+#' 
+#' @import glmnet 
+#' @importFrom caret findCorrelation
+
+glmnetlasso_vselect <- function(dt, 
+                                candidate_vars, 
+                                y, 
+                                weights, 
+                                alpha = 1, 
+                                nfolds, 
+                                seed = 123,
+                                lambda_type = "lambda.min",
+                                correlation_threshold = 0.9, # Threshold for dropping correlated variables
+                                variance_threshold = 1e-4,
+                                sparsity_threshold = 0.99,# Threshold for dropping sparse variables
+                                ...) {
+  # Load necessary library
+  if (!requireNamespace("glmnet", quietly = TRUE)) {
+    stop("The glmnet package is required. Please install it.")
+  }
+  
+  if (!requireNamespace("caret", quietly = TRUE)) {
+    install.packages("caret")
+  }
+  
+  # Ensure reproducibility
+  set.seed(seed)
+  
+  # Standardize predictors
+  X_scaled <- scale(dt[, candidate_vars])
+  y <- dt[[y]]
+  weights <- dt[[weights]]
+  
+  # Drop any columns with missing values in X_scaled
+  X_scaled <- X_scaled[, colSums(is.na(X_scaled)) == 0]
+  
+  # Drop variables with very low variance
+  variances <- apply(X_scaled, 2, var)
+  X_scaled <- X_scaled[, variances > variance_threshold]
+  
+  # Drop highly correlated variables
+  correlation_matrix <- cor(X_scaled)
+  high_corr <- caret::findCorrelation(correlation_matrix, cutoff = correlation_threshold, verbose = FALSE)
+  if (length(high_corr) > 0) {
+    X_scaled <- X_scaled[, -high_corr]
+  }
+  
+  # Identify and drop variables with 99% or more zeros
+  # Calculate proportion of zeros for each column
+  proportion_zeros <- colMeans(X_scaled == 0)
+  
+  # Filter out columns where proportion of zeros is above the threshold
+  X_scaled <- X_scaled[, proportion_zeros < sparsity_threshold]
+  
+  # Check for problematic values
+  if (anyNA(X_scaled) || any(is.infinite(X_scaled)) || any(is.nan(X_scaled))) {
+    stop("Predictor matrix contains NA, Inf, or NaN values.")
+  }
+  if (any(weights <= 0)) {
+    stop("Weights contain non-positive values.")
+  }
+
+  # Fit lasso model with cross-validation
+  cv_model <- glmnet::cv.glmnet(
+    x = X_scaled,
+    y = y,
+    weights = weights,
+    alpha = alpha,  # alpha = 1 for lasso, 0 < alpha < 1 for elastic net
+    nfolds = nfolds,
+    family = "gaussian", # Change to "binomial" or "poisson" for other models
+    ...
+  )
+  
+  # Extract coefficients at the lambda with minimum cross-validated error
+  selected_model <- glmnet::glmnet(
+    x = X_scaled,
+    y = y,
+    weights = weights,
+    alpha = alpha,
+    lambda = cv_model[[lambda_type]],
+    family = "gaussian",
+    ...
+  )
+  
+  # Identify selected variables
+  selected_variables <- rownames(as.matrix(coef(selected_model)))[as.matrix(coef(selected_model)) != 0]
+  selected_variables <- selected_variables[selected_variables != "(Intercept)"]
+  
+  return(selected_variables)
+  
+}
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
 
 ### EBP Unit Level Model Estimation
 
@@ -153,3 +450,44 @@ survey_dt %>%
 -   Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.
 -   Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.
 -   Plotting the poverty map using the ebp object and the shapefile
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
