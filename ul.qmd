@@ -10,7 +10,8 @@ if (sum(installed.packages()[,1] %in% "pacman") != 1) {
 
 pacman::p_load(povmap, emdi, dplyr, tidyr,
                data.table, glmnet, glmmLasso,
-               MASS, ggplot2)
+               MASS, ggplot2, nlme, future,
+               survey)
 
 
 ```
@@ -211,6 +212,7 @@ survey_dt <-
               values_from = dummy,
               values_fill = list(dummy = 0)) %>%
   dplyr::select(starts_with("state_")) %>%
+  rename_with(~ gsub(" ", "", .)) %>%
   cbind(survey_dt)
 
 census_dt <- 
@@ -221,6 +223,7 @@ census_dt <-
               values_from = dummy,
               values_fill = list(dummy = 0)) %>%
   dplyr::select(starts_with("state_")) %>%
+  rename_with(~ gsub(" ", "", .)) %>%
   cbind(census_dt)
 
 
@@ -364,7 +367,9 @@ glmnetlasso_vselect <- function(dt,
   
   # Drop highly correlated variables
   correlation_matrix <- cor(X_scaled)
-  high_corr <- caret::findCorrelation(correlation_matrix, cutoff = correlation_threshold, verbose = FALSE)
+  high_corr <- caret::findCorrelation(correlation_matrix, 
+                                      cutoff = correlation_threshold, 
+                                      verbose = FALSE)
   if (length(high_corr) > 0) {
     X_scaled <- X_scaled[, -high_corr]
   }
@@ -416,22 +421,170 @@ glmnetlasso_vselect <- function(dt,
 
 
 
+#### lets call this function to model selection for each transformation
+notglmnet_list <- 
+  glmnetlasso_vselect(dt = survey_dt,
+                      candidate_vars = candidate_vars,
+                      y = "eqIncome",
+                      weights = "weight",
+                      nfolds = 10,
+                      seed = 123,
+                      lambda_type = "lambda.1se",
+                      sparsity_threshold = 0.99)
+ 
 
-
+logglmnet_list <- 
+  glmnetlasso_vselect(dt = survey_dt,
+                      candidate_vars = candidate_vars,
+                      y = "logeqIncome",
+                      weights = "weight",
+                      nfolds = 10,
+                      seed = 123,
+                      lambda_type = "lambda.1se",
+                      sparsity_threshold = 0.99)
+ 
+bcxglmnet_list <- 
+  glmnetlasso_vselect(dt = survey_dt,
+                      candidate_vars = candidate_vars,
+                      y = "bcxeqIncome",
+                      weights = "weight",
+                      nfolds = 10,
+                      seed = 123,
+                      lambda_type = "lambda.1se",
+                      sparsity_threshold = 0.99)
+ 
 
 
 ```
 
 
 
+```{r}
+
+### using the ebp function to first estimate into the household survey. We need to see how well the model will estimate poverty first into the training set i.e. the household survey. this helps to check the quality of in-sample estimation without any potential prediction bias
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
+
+log_smodel <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = survey_dt[, c(logglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "log",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitsurvey_logYdump_glmnet.csv",
+              cpus = 30)
+
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
+
+bcx_smodel <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = survey_dt[, c(bcxglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "box.cox",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitsurvey_bcxYdump_glmnet.csv",
+              cpus = 30,
+              weights_type = "nlme_lambda")
+
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
+
+not_smodel <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = survey_dt[, c(notglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "no",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitsurvey_notYdump_glmnet.csv",
+              cpus = 30)
+
+### then we actually estimate the census level estimation
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
+
+log_model <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = census_dt[, c(logglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "log",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitcensus_logYdump_glmnet.csv",
+              cpus = 30)
+
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
+
+bcx_model <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = census_dt[, c(bcxglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "box.cox",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitcensus_bcxYdump_glmnet.csv",
+              cpus = 30,
+              weights_type = "nlme_lambda")
+
+
+model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
+
+not_model <- 
+  povmap::ebp(fixed = model_formula,
+              pop_data = census_dt[, c(notglmnet_list, "district")],
+              pop_domains = "district",
+              smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
+              smp_domains = "district",
+              MSE = TRUE,
+              threshold = 18207.2,
+              transformation = "no",
+              B = 50,
+              L = 50,
+              weights = "weight",
+              rescale_weights = TRUE,
+              Ydump = "data/Ydump/unitcensus_notYdump_glmnet.csv",
+              cpus = 30)
 
 
 
 
 
 
-
-
+```
 
 ### EBP Unit Level Model Estimation
 
@@ -441,6 +594,255 @@ glmnetlasso_vselect <- function(dt,
     -   remove all missing observations in survey and census
 -   Implementation of the ebp() function call
 -   Detailed description of the ebp class object which is returned
+
+
+```{r}
+
+#### first let us look at the quality of in-sample prediction
+
+ebp_national_pov <- function(ebp_obj,
+                             wgt_var,
+                             pop_domain,
+                             est_domain,
+                             pop_dt,
+                             indicators = c("Head_Count")) {
+  
+  
+  pop_dt <- 
+    pop_dt %>%
+    group_by(!!sym(pop_domain), !!sym(est_domain)) %>%
+    summarise(population = sum(!!sym(wgt_var), na.rm = TRUE), .groups = "drop")
+  
+  # Merge the ebp object data with population data
+  dt <- merge(ebp_obj$ind, 
+              pop_dt[, c(pop_domain, "population", est_domain)], 
+              by.x = "Domain", 
+              by.y = pop_domain, 
+              all.x = TRUE)
+  
+  # Compute weighted means for all indicators
+  
+  pov_dt <- 
+    dt %>%
+    as.data.table() %>%
+    .[, lapply(.SD, weighted.mean, w = population, na.rm = TRUE),
+      .SDcols = indicators,
+      by = est_domain]
+
+  return(pov_dt)
+  
+}
+
+
+ebpsurveypov_dt <- lapply(X = list(not_smodel, bcx_smodel, log_smodel),
+                          FUN = function(ebp_obj){
+                            
+                            z <- ebp_national_pov(ebp_obj = ebp_obj, 
+                                                  wgt_var = "weight", 
+                                                  pop_domain = "district", 
+                                                  pop_dt = survey_dt,
+                                                  est_domain = "state") 
+
+                            return(z)
+                            
+                          })
+
+### rename headcount columns appropriately
+
+ebpsurveypov_dt <- 
+  mapply(pov_dt = ebpsurveypov_dt,
+         name_obj = c("not", "bcx", "log"),
+         FUN = function(pov_dt, name_obj){
+            
+            pov_dt <- 
+              pov_dt %>%
+              rename_with(~ paste0(name_obj, .), .cols = "Head_Count")
+            
+            return(pov_dt)
+           
+         },
+         SIMPLIFY = FALSE)
+
+
+ebpsurveypov_dt <- Reduce(f = merge,
+                          x = ebpsurveypov_dt)
+
+
+### we create some fake clusters within the districts to show how to use the survey package
+### to estimate the standard errors on the poverty rates
+
+#### for simplicity we will assume there are 5 clusters in each district
+
+survey_dt <- 
+survey_dt %>%
+  group_by(district) %>%
+  mutate(num_clusters = pmax(2, round(n() / sample(5:15, 1))),
+         cluster = sample(rep(1:num_clusters, length.out = n()))) %>%
+  ungroup() %>%
+  mutate(cluster_id = dense_rank(interaction(district, cluster)))
+
+
+svy_obj <- 
+survey_dt %>%
+  mutate(poor = ifelse(eqIncome < 18207.2, 1, 0)) %>%
+  dplyr::select(district, weight, state, poor, cluster_id) %>%
+  survey::svydesign(ids = ~cluster_id,
+                    weights = ~weight,
+                    strata = ~state,
+                    survey.lonely.psu = "adjust",
+                    data = .)
+
+var_dt <- 
+  svyby(~poor, ~state, svy_obj, svymean) %>%
+  mutate(poorLB = poor - 1.96*se,
+         poorUB = poor + 1.96*se) 
+
+ebpsurveypov_dt <- merge(ebpsurveypov_dt, 
+                         var_dt[, c("state", "poor", "poorLB", "poorUB")] %>%
+                           as.data.frame(),
+                         by = "state")
+
+
+#### it is also important to look at the predictive power of the model estimation in the training set (i.e. the survey) at each poverty map
+#### here I show how chart that compares the poverty rates at each poverty ventile and the estimated poverty rates
+
+ydumppath_list <- list.files(path = "data/Ydump",
+                             pattern = "^unitsurvey_.*Ydump_glmnet.csv",
+                             full.names = TRUE)
+
+### the following code will read in the Ydump data into a list of data.frame objects and sequentially: 
+### - combine the ydump with household survey
+### - compute poverty rates at each threshold
+
+#### lets write a function to do this for one of our models
+
+ydump_dtlist <- lapply(X = ydumppath_list,
+                       FUN = fread)
+
+
+names(ydump_dtlist) <- 
+    basename(ydumppath_list) %>%
+    sub(pattern = "^unitsurvey_", replacement = "") %>%
+    sub(pattern = "_glmnet.csv", replacement = "")
+
+
+### a simple function to carry out the poverty rate comparisons (model vs actual at each poverty ventile, 5% increments) & plot the result
+
+compare_surveyebp_atpovline <- function(ydump_data,
+                                        smp_data,
+                                        smp_domains,
+                                        smp_weights,
+                                        outcome_var,
+                                        pline_increment = seq(0, 1, 0.05)){
+  
+  ydump_dt <- as.data.table(ydump_data)
+  smp_dt <- as.data.table(smp_data[, c(smp_domains, smp_weights, outcome_var)])
+  
+  ydump_dt <- cbind(ydump_dt, 
+                    smp_dt[, c(smp_domains, smp_weights), with = FALSE] %>%
+                      arrange(smp_domains))
+  
+  threshold_list <-
+    wtd.quantile(x = smp_dt[[outcome_var]],
+                 weights = smp_dt[[smp_weights]],
+                 probs = pline_increment)
+  
+  compute_ptile_pov <- function(welfare_dt,
+                                weights,
+                                welfare,
+                                thresholds){
+  
+    pov_list <- 
+    lapply(X = thresholds,
+           FUN = function(x){
+             
+             yy <- 
+               welfare_dt %>%
+               mutate(poor = ifelse(!!sym(welfare) < x, 1, 0)) %>%
+               summarize(prate = weighted.mean(x = poor,
+                                               w = !!sym(weights),
+                                               na.rm = TRUE))
+             
+             return(yy)
+             
+           })
+    
+    pov_list <- 
+      unlist(pov_list) %>%
+      data.frame() %>%
+      setNames("pov")
+    
+    
+    return(pov_list)
+    
+  }
+  
+  pov_dt <- compute_ptile_pov(welfare_dt = ydump_dt,
+                              weights = smp_weights,
+                              welfare = "Simulated_Y",
+                              thresholds = threshold_list)
+  
+  pov_dt <- data.table(ebp_poverty = pov_dt,
+                       probs = as.character(seq(0, 1, 0.05)))
+
+  
+  # povcheck_plots <- 
+  #   pov_dt %>%
+  #   mutate(y )
+  #   ggplot(aes(x = as.numeric(probs)))
+  
+  return(pov_dt)
+  
+}
+
+### now lets plot the results
+
+svyplinecomp_list <- 
+  lapply(X = ydump_dtlist,
+         FUN = function(ydump) {
+           compare_surveyebp_atpovline(ydump_data = ydump,
+                                       smp_data = survey_dt,
+                                       smp_domains = "district",
+                                       smp_weights = "weight",
+                                       outcome_var = "eqIncome")
+         })
+
+## a bit of cleaning and then making the plots
+
+svyplinecomp_dt <- 
+  mapply(comp_dt = svyplinecomp_list,
+         name_list = names(svyplinecomp_list),
+         FUN = function(comp_dt, name_list) {
+           
+           comp_dt <- 
+             comp_dt %>%
+             rename(ebp = "ebp_poverty.pov") %>%
+             mutate(probs = as.numeric(probs)) %>%
+             mutate(diff = ebp - probs) %>%
+             mutate(transformation = sub("Ydump", "", name_list))
+           
+ 
+           
+ 
+           return(comp_dt)
+           
+         }, SIMPLIFY = FALSE)
+
+svyplinecomp_dt <- Reduce("rbind", svyplinecomp_dt)
+
+svyplinecomp_dt %>%
+  ggplot() +
+  geom_line(aes(x = probs,
+                y = diff,
+                color = transformation)) + 
+  theme_minimal()
+
+
+
+```
+
+
+
 
 ### Post Estimation Diagnostics
 
