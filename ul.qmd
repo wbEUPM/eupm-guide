@@ -11,7 +11,8 @@ if (sum(installed.packages()[,1] %in% "pacman") != 1) {
 pacman::p_load(povmap, emdi, dplyr, tidyr,
                data.table, glmnet, glmmLasso,
                MASS, ggplot2, nlme, future,
-               survey)
+               survey, flextable, officer,
+               ggtext, gridExtra)
 
 
 ```
@@ -459,9 +460,11 @@ bcxglmnet_list <-
 
 
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 
 ### using the ebp function to first estimate into the household survey. We need to see how well the model will estimate poverty first into the training set i.e. the household survey. this helps to check the quality of in-sample estimation without any potential prediction bias
+
+dir.create("data/Ydump")
 
 model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
 
@@ -481,6 +484,7 @@ log_smodel <-
               Ydump = "data/Ydump/unitsurvey_logYdump_glmnet.csv",
               cpus = 30)
 
+saveRDS(log_smodel, "data/log_surveymodel.RDS")
 
 model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
 
@@ -500,6 +504,7 @@ bcx_smodel <-
               Ydump = "data/Ydump/unitsurvey_bcxYdump_glmnet.csv",
               cpus = 30,
               weights_type = "nlme_lambda")
+saveRDS(bcx_smodel, "data/bcx_surveymodel.RDS")
 
 
 model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
@@ -519,6 +524,8 @@ not_smodel <-
               rescale_weights = TRUE,
               Ydump = "data/Ydump/unitsurvey_notYdump_glmnet.csv",
               cpus = 30)
+saveRDS(not_smodel, "data/not_surveymodel.RDS")
+
 
 ### then we actually estimate the census level estimation
 
@@ -539,6 +546,7 @@ log_model <-
               rescale_weights = TRUE,
               Ydump = "data/Ydump/unitcensus_logYdump_glmnet.csv",
               cpus = 30)
+saveRDS(log_model, "data/log_censusmodel.RDS")
 
 
 model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
@@ -560,6 +568,8 @@ bcx_model <-
               cpus = 30,
               weights_type = "nlme_lambda")
 
+saveRDS(bcx_model, "data/bcx_censusmodel.RDS")
+
 
 model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
 
@@ -580,6 +590,7 @@ not_model <-
               cpus = 30)
 
 
+saveRDS(not_model, "data/not_censusmodel.RDS")
 
 
 
@@ -842,12 +853,10 @@ svyplinecomp_dt %>%
 ```
 
 
-
-
 ### Post Estimation Diagnostics
 
 -   Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)
--   Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.\
+-   Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.
 -   Check on model validity: Create a plot to show how poverty rates vary at each ventile i.e. at 5% poverty line increments. This is to show how to check the quality of model prediction without the added bias of out of sample prediction
 -   Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.
 -   Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.
@@ -855,13 +864,238 @@ svyplinecomp_dt %>%
 
 
 
+```{r}
+
+#### presenting the results of the linear mixed effects regression
+
+specify_decimal <- function(x, k) trimws(format(round(x, k), nsmall=k))
+
+coef_dt <- povmap::ebp_reportcoef_table(log_model) ### to quickly create coefficients table
+
+err_dt <- ## showing how to present the skewness and kurtosis of the random effects and model errors
+  povmap::ebp_normalityfit(log_model) %>%
+  mutate(value = specify_decimal(value, 3))
+
+
+### to convert this into a publication ready report
+
+create_regression_table <- function(coef_table, eval_table) {
+  
+  # Rename columns for consistency
+  coef_table <- 
+    coef_table %>%
+    rename(Description = Variable, Estimate = coeff, `Std. Error` = std_error) %>%
+    mutate(Type = "Coefficients") %>%
+    mutate(Estimate = paste0(Estimate, "\n(", `Std. Error`, ")")) %>%  # Format std. error under estimates
+    dplyr::select(Type, Description, Estimate)
+
+  eval_table <- eval_table %>%
+    rename(Description = indicator, Estimate = value) %>%
+    mutate(Type = "Diagnostics")
+
+  # Combine coefficient and diagnostic tables
+  full_table <- rbind(coef_table, 
+                      eval_table %>%
+                        dplyr::select(colnames(coef_table)))
+
+  # Identify where diagnostics start
+  diag_start <- nrow(coef_table) + 1
+
+  # Create flextable
+  regression_table <- 
+  flextable(full_table) %>%
+    set_header_labels(
+      Type = "Type",
+      Description = "Description",
+      Estimate = "Estimate"
+    ) %>%
+    hline(part = "all") %>%
+    merge_v(j = "Type") %>%
+    align(j = "Description", align = "left", part = "all") %>%
+    align(j = "Estimate", align = "center", part = "all") %>%
+    vline(j = 1, border = fp_border(color = "black", width = 1)) %>%
+    hline(i = diag_start - 1, border = fp_border(color = "black", width = 1)) %>%
+    autofit() %>%
+    width(j = "Type", width = 1.2) %>%
+    width(j = "Description", width = 2) %>%
+    width(j = "Estimate", width = 1.5)
+
+  # Styling for diagnostics
+  regression_table <- regression_table %>%
+    bold(i = diag_start:nrow(full_table), bold = TRUE) %>%
+    italic(i = diag_start:nrow(full_table), italic = TRUE) %>%
+    font(fontname = "Times New Roman", part = "all") %>%
+    fontsize(size = 10, part = "all")
+
+  return(regression_table)
+  
+}
+
+
+### regression tables
+create_regression_table(coef_table = coef_dt,
+                        eval_table = err_dt)
+
+```
+
+
+```{r}
+
+### start by explaining that the plot function could be used in R to show the error diagnostics as follows
+plot(log_model)
+
+
+### a more thorough test on normality using the Kolmogrov-Smirnov tests
+
+ebp_kstest <- function(ebp_obj){
+  
+  epsilon_values <- as.numeric(residuals(ebp_obj$model, level = 0, type = "pearson"))
+
+  mu_values <- as.numeric(nlme::ranef(ebp_obj$model)$"(Intercept)")
+  
+  mu_values <- (mu_values - mean(mu_values, na.rm = TRUE)) / sd(mu_values, na.rm = TRUE)
+  
+  xx <- ks.test(epsilon_values, "pnorm", mean = mean(epsilon_values), sd = sd(epsilon_values))
+  
+  yy <- ks.test(mu_values, "pnorm", mean = mean(mu_values), sd = sd(mu_values))
+  
+  plot_random <- 
+    mu_values %>%
+    as.data.table() %>%
+    setnames(new = "values") %>%
+    ggplot() + 
+    geom_density(aes(x = values), fill = "blue", alpha = 0.5) + 
+    labs(x = "Random Effects", y = "Density", title = "Random Effect Residuals (\u03BC)") + 
+    theme_minimal() + 
+    ylim(0, 0.4) + 
+    xlim(-4, 4) + 
+    annotate("richtext", x = 0, y = 0.3, label = "<b>Kolmogrov-Smirnov Normality Test</b>", 
+             fill = NA, label.color = NA) + 
+    annotate("text", x = 0, y = 0.28, label = paste0("D-stat = ", 
+                                                    specify_decimal(yy$statistic, 3),
+                                                    "; p-value = ", 
+                                                    specify_decimal(yy$p.value, 3)), 
+             size = 3)
+  
+  plot_error <- 
+    epsilon_values %>%
+    as.data.table() %>%
+    setnames(new = "values") %>%
+    ggplot() + 
+    geom_density(aes(x = values), fill = "blue", alpha = 0.5) + 
+    labs(x = "Model Error Terms", y = "Density", title = "Standardized Error Residuals (\u03B5)") + 
+    theme_minimal() + 
+    annotate("richtext", x = 0.75, y = 0.3, label = "<b>Kolmogrov-Smirnov Normality Test</b>", 
+             fill = NA, label.color = NA) + 
+    annotate("text", x = 0, y = 0.28, label = paste0("D-stat = ", 
+                                                     specify_decimal(xx$statistic, 3),
+                                                     "; p-value = ", 
+                                                     specify_decimal(xx$p.value, 3)), 
+             size = 3)
+  
+  
+  p <- grid.arrange(grobs = list(plot_random, plot_error), nrow = 1)  
+    
+  
+  return(p)
+  
+}
+
+ebp_kstest(log_model)
 
 
 
+```
 
 
 
+### CV Estimation
+```{r}
 
+### it is important to compare Coefficient of Variation between the survey direct estimates and the census computations. 
+
+#### first using the povmap::direct() function to estimate the direct and model estimate cvs for the poverty rates
+
+ebp_compare_cv <- function(ebp_obj, ...) {
+  
+  # Convert to data.table
+  ind_dt <- as.data.table(ebp_obj$ind)
+  mse_dt <- as.data.table(ebp_obj$MSE)
+
+  # Ensure mse_dt and ind_dt are numeric except Domain
+  mse_numeric <- mse_dt[, !("Domain"), with = FALSE]
+  ind_numeric <- ind_dt[, !("Domain"), with = FALSE]
+
+  # Compute CV
+  ebpcv_dt <- sqrt(mse_numeric) / ind_numeric
+
+  # Add Domain back
+  ebpcv_dt[, Domain := ind_dt$Domain]
+
+  # Compute direct estimation
+  direct_dt <- povmap::direct(...)
+
+  # Identify numeric columns common to both
+  common_cols <- intersect(names(direct_dt$ind), names(direct_dt$MSE))
+  numeric_cols <- common_cols[sapply(as.data.table(direct_dt$ind)[, ..common_cols], is.numeric)]
+
+  # Compute CV for direct estimation
+  directcv_dt <- sqrt(as.data.table(direct_dt$MSE)[, ..numeric_cols]) / 
+                 as.data.table(direct_dt$ind)[, ..numeric_cols]
+
+  # Add Domain back and rename
+  directcv_dt <- 
+    cbind(as.data.table(direct_dt$ind)[, .(Domain)], directcv_dt) %>%
+          dplyr::select(Domain, Head_Count) %>%
+          rename(HT_Head_Count = Head_Count)
+
+  # Merge direct and EBP results
+  cv_dt <- directcv_dt[ebpcv_dt, on = "Domain"]
+
+  # Rename columns for clarity
+  setnames(cv_dt, "Head_Count", "Head_Count_CV")
+  setnames(cv_dt, "HT_Head_Count", "HT_Head_Count_CV")
+
+  return(cv_dt)
+  
+}
+
+
+cv_dt <- ebp_compare_cv(ebp_obj = log_model,
+                        y = "eqIncome",
+                        smp_data = survey_dt,
+                        smp_domains = "district",
+                        weights = "weight",
+                        var = TRUE,
+                        threshold = 18207.2,
+                        design = "state",
+                        na.rm = TRUE,
+                        HT = TRUE)
+
+
+### it is useful to be able to be able to figure out how 
+gains_value <- 
+  cv_dt %>%
+  mutate(gains = HT_Head_Count_CV / Head_Count_CV) %>%
+  summarize(mean(gains, na.rm = TRUE))
+
+#### create visualization to show how the EBP CVs are an improvement on the Horwitz-Thompson Headcount CVs
+#### as a result of SAE
+
+cv_dt %>%
+  ggplot() + 
+  geom_point(aes(y = Head_Count_CV, x = HT_Head_Count_CV)) + 
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "blue") + 
+  labs(x = "Horwitz-Thompson Headcount CV",
+       y = "EBP Head Count CV") + 
+  xlim(0, 1.5) + 
+  ylim(0, 1.5) + 
+  scale_color_viridis_d(option = "plasma") + 
+  theme_minimal()
+
+
+
+```
 
 
 
