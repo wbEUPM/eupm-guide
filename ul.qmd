@@ -8,11 +8,9 @@ if (sum(installed.packages()[,1] %in% "pacman") != 1) {
   
 }
 
-pacman::p_load(povmap, emdi, dplyr, tidyr,
-               data.table, glmnet, glmmLasso,
-               MASS, ggplot2, nlme, future,
-               survey, flextable, officer,
-               ggtext, gridExtra)
+pacman::p_load(povmap, emdi, dplyr, tidyr, data.table, glmnet, glmmLasso,
+               MASS, ggplot2, nlme, future, survey, flextable, officer,
+               ggtext, gridExtra, survey)
 
 
 ```
@@ -88,7 +86,7 @@ In this section, we describe a few common techniques for creating variables with
 
 - target area average variables
 
-- dummy variables (at the lowest level of national representativeness, regional dummies, as well as other dummy variables to capture some non-linear relationships between the certain variables and the outcome variable)
+- dummy variables (at the lowest level of national representation, regional dummies, as well as other dummy variables to capture some non-linear relationships between the certain variables and the outcome variable)
 
 First a little bit of housekeeping is in order: 
 
@@ -113,6 +111,8 @@ census_dt <-
 ```
 
 #### Creating Variable Interactions
+
+The `create_interactions()` function employed in the subsequent code block interacts a specified variable `interacter_var` with a list of variables of interest `var_list`. This should be applied to both census and survey data to ensure the same variables are created in both instances. 
 
 ```{r}
 
@@ -174,8 +174,10 @@ census_dt <-
 
 ```
 
-#### Computing target area averages
-It is often useful to compute target area averages to improve the explanation of intra-area variation in the dependent variable. Here is some code we have used in the past to do this: 
+#### Computing target area averages and regional dummies
+It is often useful to compute target area averages to improve the explanation of intra-area variation in the dependent variable. Below is some efficient code that employs the power of the `data.table` package to compute the averages and simultaneously include them within the census and survey datasets. 
+
+In addition, creating dummy variables for the lowest resolution administrative division which is also national representative may help control for some unobserved regional heterogeneity, improving model fit and prediction accuracy, capture spatial dependence in welfare patterns. In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity  
 
 ```{r}
 
@@ -235,14 +237,12 @@ candidate_vars <- c(candidate_vars,
 
 ```
 
+In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity or reduce the degrees of freedom.  
 
+### Final Preparations for Variable Selection
 
-### Variable Selection
+Certain diagnostics checks ought to be performed before the variable selection process is implemented. First, we check the distribution of the non-transformed outcome variable. In the case of income or household consumption, it is typically expected and preferred that the income/household consumption variable can be transformed into a normally distributed random variable. We apply the log and boxcox transformations as seen in the code below: 
 
--   Checking that each variable has similar distribution between the survey and census and dropping variables that do not meet (a function has been written to do this test better than the ebp_test_means() function in povmap)
--   Dropping multicollinear variables (using the VIF method and complementing with correlation threshold method)
--   Implementing variable selection under different welfare transformations (use wrapper functions that I have written for the variable selection using glmmLasso and GLMNET R packages)
--   Cross-Fold Validating the variable selection process i.e. a plot to show how MSE for each lambda of glmnet is performed. (May also show how to do this with glmmLasso)
 
 ```{r, fig.width = 8}
 
@@ -301,6 +301,117 @@ gridExtra::grid.arrange(grobs = list(p1, p2), nrow = 1)
 
 ```
 
+Several other transformations are also possible including the ordernorm transformation. See `bestNormalize::orderNorm()` documentation for more details. 
+
+Next, we ensure the candidate variables in the survey and census come from similar distributions. One assumption of the linear mixed effects approach is that the variables selected are drawn from the same distribution. In the following chunk, we apply the `povmap::ebp_test_means()` function to present a table of means for each survey and census and show the results of the standard z-tests. It is common to drop values that reject the null hypothesis (at the 95% level) that the survey variable (for any given variable) has a different mean from the same variable in the census. 
+
+```{r}
+
+test_dt <- povmap::ebp_test_means(varlist = candidate_vars,
+                                  smp_data = survey_dt,
+                                  pop_data = census_dt,
+                                  weights = "weight")
+
+head(test_dt)
+
+```
+
+
+However, the `ebp_test_means` function doesn't control for the fact that the variables are national representative at the state level. We implement another variant to the `ebp_test_means` that will allow users to cluster the standard errors at the state level.
+
+```{r}
+
+#' Perform test for difference between survey and census means 
+#' 
+#' This function computes weighted means of the same set of variables within the census and survey controlling for a cluster level. A test for 
+#' difference of the means are performed for each variable with two-tailed p-values returned and the cluster level has to be specified for the
+#' estimation of variance
+#' 
+#' @param varlist character vector, the set of variables of interest
+#' @param smp_data the survey data
+#' @param pop_data the population data
+#' @param weights a character string containing the name of a variable that indicates weights in the sample data. If a character string is 
+#' provided a weighted version of the ebp will be used.
+#' @param pop_weights a character string containing the name of a variable that indicates population weights in the population data. If a 
+#' If a character string is provided weighted indicators are estimated using population weights. The variable has to be numeric. 
+#' Defaults to NULL. 
+#' 
+#' @import survey
+
+
+ebp_test_means_clustered <- function(varlist, 
+                                     smp_data, 
+                                     pop_data, 
+                                     cluster, 
+                                     weights = NULL, 
+                                     pop_weights = NULL) {
+  
+  if (is.null(weights)) {
+    smp_data$weights <- rep(1, nrow(smp_data))
+    weights <- "weights"
+  }
+  if (is.null(pop_weights)) {
+    pop_data$pop_weights <- rep(1, nrow(pop_data))
+    pop_weights <- "pop_weights"
+  } else {
+    
+    pop_data$pop_weights <- pop_data[[pop_weights]]
+    
+  }
+  
+  smp_df <- smp_data[complete.cases(smp_data[, c(varlist, weights, cluster)]), c(varlist, weights, cluster)]
+  pop_df <- pop_data[complete.cases(pop_data[, c(varlist, "pop_weights", cluster)]), c(varlist, "pop_weights", cluster)]
+  
+  smp_df <- smp_df %>% mutate(across(all_of(varlist), as.numeric))
+  pop_df <- pop_df %>% mutate(across(all_of(varlist), as.numeric))
+  
+  # Define survey design with clustering
+  smp_design <- svydesign(id = ~get(cluster), weights = ~get(weights), data = smp_df)
+  pop_design <- svydesign(id = ~get(cluster), weights = ~pop_weights, data = pop_df)
+  
+  smp_means_df <- data.frame(
+    smp_means = sapply(varlist, function(var) svymean(as.formula(paste("~", var)), smp_design)[1]),
+    smp_se = sapply(varlist, function(var) SE(svymean(as.formula(paste("~", var)), smp_design))),
+    variable = varlist
+  )
+  
+  pop_means_df <- data.frame(
+    pop_means = sapply(varlist, function(var) svymean(as.formula(paste("~", var)), pop_design)[1]),
+    pop_se = sapply(varlist, function(var) SE(svymean(as.formula(paste("~", var)), pop_design))),
+    variable = varlist
+  )
+  
+  means_df <- merge(smp_means_df, pop_means_df, by = "variable")
+  means_df$diff <- means_df$pop_means - means_df$smp_means
+  means_df$diff_se <- sqrt(means_df$smp_se^2 + means_df$pop_se^2)
+  means_df$zscore <- means_df$diff / means_df$diff_se
+  means_df$pvalue <- 2 * (1 - pnorm(abs(means_df$zscore)))
+  
+  return(means_df[, c("variable", "smp_means", "pop_means", "diff", "pvalue")])
+  
+}
+
+
+
+test_dt <- 
+ebp_test_means_clustered(varlist = candidate_vars,
+                         smp_data = survey_dt,
+                         pop_data = census_dt,
+                         cluster = "state",
+                         weights = "weight")
+
+head(test_dt)
+
+
+```
+
+
+In the next section, we fold the final checks into the variable selection process. We drop variables that are highly correlated and set a sparsity threshold. The sparsity threshold ensures that variables that do not have a certain proportion of non-missing observations are dropped. We have folded both these checks into the `glmnetlasso_vselect()` function. 
+
+
+### The Variable Selection Process
+
+The `glmnetlasso_vselect()` function takes the dependent variable (welfare or income variable) as well as the set of potential candidate variables which just created and applies the lasso methodology (run `here(glmnet::glmnet)` for more details). This includes the option to perform a reproducible n-fold cross validation to reduce the risk of overfitting the model. In this instance, we have run applied this function to select the best predictors of household welfare based on the 3 welfare transformations i.e. 3 separate runs of the function, one for each transformation. See below: 
 
 ```{r}
 
@@ -458,153 +569,178 @@ bcxglmnet_list <-
 
 ```
 
+Now that we have selected variables for each outcome variable transformation. We are ready to apply this `povmap::ebp()` to estimate a poverty map for Austria. The function will estimate a linear mixed effects model of the income in Austria from which the poverty line will be applied to estimate the poverty rates. Please run `help(povmap::ebp)` for details about the objects produced. 
 
+For the proper functioning of the `povmap::ebp` function, the following conditions must be met:
+
+- the arguments `pop_data` and `smp_data` require the survey and census datasets must be of class `data.frame`.
+
+- `pop_data` and `smp_data` must contain no missing observations across all the variables. Use the `na.omit()` function to ensure only complete cases are included within each object. 
+
+- All target areas (or domains) within the `smp_domains` must be found within `pop_domains` i.e. for the Austria example, all domains/target areas in the survey must be found in the census. 
+
+- `rescale_weights` argument set to TRUE may solve parameter estimation convergence issues. 
 
 ```{r, message=FALSE, warning=FALSE}
+# 
+# ### using the ebp function to first estimate into the household survey. We need to see how well the model will estimate poverty first into the training set i.e. the household survey. this helps to check the quality of in-sample estimation without any potential prediction bias
+# 
+# dir.create("data/Ydump")
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
+# 
+# log_smodel <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = survey_dt[, c(logglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "log",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitsurvey_logYdump_glmnet.csv",
+#               cpus = 30)
+# 
+# saveRDS(log_smodel, "data/log_surveymodel.RDS")
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
+# 
+# bcx_smodel <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = survey_dt[, c(bcxglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "box.cox",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitsurvey_bcxYdump_glmnet.csv",
+#               cpus = 30,
+#               weights_type = "nlme_lambda")
+# saveRDS(bcx_smodel, "data/bcx_surveymodel.RDS")
+# 
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
+# 
+# not_smodel <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = survey_dt[, c(notglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "no",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitsurvey_notYdump_glmnet.csv",
+#               cpus = 30)
+# saveRDS(not_smodel, "data/not_surveymodel.RDS")
+# 
+# 
+# ### then we actually estimate the census level estimation
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
+# 
+# log_model <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = census_dt[, c(logglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "log",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitcensus_logYdump_glmnet.csv",
+#               cpus = 30)
+# saveRDS(log_model, "data/log_censusmodel.RDS")
+# 
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
+# 
+# bcx_model <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = census_dt[, c(bcxglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "box.cox",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitcensus_bcxYdump_glmnet.csv",
+#               cpus = 30,
+#               weights_type = "nlme_lambda")
+# 
+# saveRDS(bcx_model, "data/bcx_censusmodel.RDS")
+# 
+# 
+# model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
+# 
+# not_model <- 
+#   povmap::ebp(fixed = model_formula,
+#               pop_data = census_dt[, c(notglmnet_list, "district")],
+#               pop_domains = "district",
+#               smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
+#               smp_domains = "district",
+#               MSE = TRUE,
+#               threshold = 18207.2,
+#               transformation = "no",
+#               B = 50,
+#               L = 50,
+#               weights = "weight",
+#               rescale_weights = TRUE,
+#               Ydump = "data/Ydump/unitcensus_notYdump_glmnet.csv",
+#               cpus = 30)
+# 
+# 
+# saveRDS(not_model, "data/not_censusmodel.RDS")
+# 
 
-### using the ebp function to first estimate into the household survey. We need to see how well the model will estimate poverty first into the training set i.e. the household survey. this helps to check the quality of in-sample estimation without any potential prediction bias
 
-dir.create("data/Ydump")
-
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
-
-log_smodel <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = survey_dt[, c(logglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "log",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitsurvey_logYdump_glmnet.csv",
-              cpus = 30)
-
-saveRDS(log_smodel, "data/log_surveymodel.RDS")
-
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
-
-bcx_smodel <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = survey_dt[, c(bcxglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "box.cox",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitsurvey_bcxYdump_glmnet.csv",
-              cpus = 30,
-              weights_type = "nlme_lambda")
-saveRDS(bcx_smodel, "data/bcx_surveymodel.RDS")
+log_smodel <- readRDS("data/log_surveymodel.RDS")
+bcx_smodel <- readRDS("data/bcx_surveymodel.RDS")
+not_smodel <- readRDS("data/not_surveymodel.RDS")
+log_model <- readRDS("data/log_censusmodel.RDS")
+bcx_model <- readRDS("data/bcx_censusmodel.RDS")
+not_model <- readRDS("data/not_censusmodel.RDS")
 
 
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
-
-not_smodel <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = survey_dt[, c(notglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "no",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitsurvey_notYdump_glmnet.csv",
-              cpus = 30)
-saveRDS(not_smodel, "data/not_surveymodel.RDS")
 
 
-### then we actually estimate the census level estimation
-
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(logglmnet_list, collapse = " + ")))
-
-log_model <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = census_dt[, c(logglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c("eqIncome", logglmnet_list, "district", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "log",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitcensus_logYdump_glmnet.csv",
-              cpus = 30)
-saveRDS(log_model, "data/log_censusmodel.RDS")
-
-
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(bcxglmnet_list, collapse = " + ")))
-
-bcx_model <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = census_dt[, c(bcxglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c(bcxglmnet_list, "district", "eqIncome", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "box.cox",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitcensus_bcxYdump_glmnet.csv",
-              cpus = 30,
-              weights_type = "nlme_lambda")
-
-saveRDS(bcx_model, "data/bcx_censusmodel.RDS")
-
-
-model_formula <- as.formula(paste0("eqIncome ~ ", paste(notglmnet_list, collapse = " + ")))
-
-not_model <- 
-  povmap::ebp(fixed = model_formula,
-              pop_data = census_dt[, c(notglmnet_list, "district")],
-              pop_domains = "district",
-              smp_data = survey_dt[, c(notglmnet_list, "district", "eqIncome", "weight")],
-              smp_domains = "district",
-              MSE = TRUE,
-              threshold = 18207.2,
-              transformation = "no",
-              B = 50,
-              L = 50,
-              weights = "weight",
-              rescale_weights = TRUE,
-              Ydump = "data/Ydump/unitcensus_notYdump_glmnet.csv",
-              cpus = 30)
-
-
-saveRDS(not_model, "data/not_censusmodel.RDS")
 
 
 
 
 ```
 
-### EBP Unit Level Model Estimation
+### Post Estimation Diagnostics
 
--   Start with a few notes on the pre-reqs needed to use the ebp() function in EMDI/povmap R packages i.e.
-    -   all target areas (domain argument) in the survey must be in the census
-    -   domain argument must be integer class
-    -   remove all missing observations in survey and census
--   Implementation of the ebp() function call
--   Detailed description of the ebp class object which is returned
+- Here we ought to explain all the post-estimation diagnostics
+
+- Check the results of estimation in the survey and then into the census in terms of how well we match results aggregated to the state level. 
+
+
+
+
+
 
 
 ```{r}
@@ -942,7 +1078,7 @@ create_regression_table(coef_table = coef_dt,
 ```{r}
 
 ### start by explaining that the plot function could be used in R to show the error diagnostics as follows
-plot(log_model)
+# plot(log_model)
 
 
 ### a more thorough test on normality using the Kolmogrov-Smirnov tests
@@ -1093,6 +1229,29 @@ cv_dt %>%
   scale_color_viridis_d(option = "plasma") + 
   theme_minimal()
 
+
+### plot the poverty map
+
+#### load the shapefile from the povmap
+povmap::load_shapeaustria()
+
+
+log_model$ind[c("Domain", "Head_Count")] %>%
+  merge(shape_austria_dis[, c("PB")],
+        by.x = "Domain", by.y = "PB") %>%
+  sf::st_as_sf(crs = 4326) %>%
+  ggplot() + 
+  geom_sf(aes(fill = Head_Count)) + 
+  scale_fill_viridis_c(option = "magma",
+                       direction = -1,
+                       name = "Poverty Rate") + 
+  labs(title = "Poverty Map: Austria") + 
+  theme_minimal() + 
+  theme(axis.title = element_blank(), # Remove axis labels
+        axis.text = element_blank(),  # Remove axis text
+        panel.grid = element_blank(), # Remove grid lines
+        plot.title = element_text(hjust = 0.5, size = 16), # Center and style title
+        plot.subtitle = element_text(hjust = 0.5, size = 12))
 
 
 ```
