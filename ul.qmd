@@ -39,7 +39,6 @@ The main idea of SAE is to combine multiple data sources. Typically, there is a 
 
 -   A unit census/administrative register `dataframe` object with individual and household characteristics including the target area variable. The outcome variable is typically missing since the topic of this tutorial is estimating it.
 
-
 For the purposes of this tutorial, we will use the European Union Statistics on Income and Living Conditions (EU-SILC) in Austria from 2006. Please see [@kreutzmann2019r] for the full description of the dataset
 
 ```{r}
@@ -72,23 +71,23 @@ length(x) ### there appear to be no areas as such
 
 ```
 
-Other important data for poverty mapping include: 
+Other important data for poverty mapping include:
 
-- A shapefile : While a table of poverty rates would suffice, a picture is worth more than a 1000 words and as such `emdi` and `povmap` have functionality for converting the resulting estimates into a map using the `plot()` function within the `emdi` and `povmap` packages. It is essential that the target area variable in the census and survey (which by now should be consistent between the survey and census) should also match with the target area variable within the shapefile in order to use the `plot()` function within `emdi` or `povmap`. 
+-   A shapefile : While a table of poverty rates would suffice, a picture is worth more than a 1000 words and as such `emdi` and `povmap` have functionality for converting the resulting estimates into a map using the `plot()` function within the `emdi` and `povmap` packages. It is essential that the target area variable in the census and survey (which by now should be consistent between the survey and census) should also match with the target area variable within the shapefile in order to use the `plot()` function within `emdi` or `povmap`.
 
 Once the following steps have been taken, the next stage is to prepare the set of variables for estimating a model of household welfare and predicting the consumption aggregates into the census.
 
 ### Data Preparation for unit level model
 
-In this section, we describe a few common techniques for creating variables with strong correlations to the outcome variable. This includes creating: 
+In this section, we describe a few common techniques for creating variables with strong correlations to the outcome variable. This includes creating:
 
-- variable interactions
+-   variable interactions
 
-- target area average variables
+-   target area average variables
 
-- dummy variables (at the lowest level of national representation, regional dummies, as well as other dummy variables to capture some non-linear relationships between the certain variables and the outcome variable)
+-   dummy variables (at the lowest level of national representation, regional dummies, as well as other dummy variables to capture some non-linear relationships between the certain variables and the outcome variable)
 
-First a little bit of housekeeping is in order: 
+First a little bit of housekeeping is in order:
 
 ```{r}
 
@@ -112,7 +111,7 @@ census_dt <-
 
 #### Creating Variable Interactions
 
-The `create_interactions()` function employed in the subsequent code block interacts a specified variable `interacter_var` with a list of variables of interest `var_list`. This should be applied to both census and survey data to ensure the same variables are created in both instances. 
+The `create_interactions()` function employed in the subsequent code block interacts a specified variable `interacter_var` with a list of variables of interest `var_list`. This should be applied to both census and survey data to ensure the same variables are created in both instances.
 
 ```{r}
 
@@ -175,9 +174,10 @@ census_dt <-
 ```
 
 #### Computing target area averages and regional dummies
-It is often useful to compute target area averages to improve the explanation of intra-area variation in the dependent variable. Below is some efficient code that employs the power of the `data.table` package to compute the averages and simultaneously include them within the census and survey datasets. 
 
-In addition, creating dummy variables for the lowest resolution administrative division which is also national representative may help control for some unobserved regional heterogeneity, improving model fit and prediction accuracy, capture spatial dependence in welfare patterns. In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity  
+It is often useful to compute target area averages to improve the explanation of intra-area variation in the dependent variable. Below is some efficient code that employs the power of the `data.table` package to compute the averages and simultaneously include them within the census and survey datasets.
+
+In addition, creating dummy variables for the lowest resolution administrative division which is also national representative may help control for some unobserved regional heterogeneity, improving model fit and prediction accuracy, capture spatial dependence in welfare patterns. In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity
 
 ```{r}
 
@@ -237,12 +237,11 @@ candidate_vars <- c(candidate_vars,
 
 ```
 
-In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity or reduce the degrees of freedom.  
+In rear cases, it should be noted that dummy variables with too few observations in any class might introduce high multicollinearity or reduce the degrees of freedom.
 
 ### Final Preparations for Variable Selection
 
-Certain diagnostics checks ought to be performed before the variable selection process is implemented. First, we check the distribution of the non-transformed outcome variable. In the case of income or household consumption, it is typically expected and preferred that the income/household consumption variable can be transformed into a normally distributed random variable. We apply the log and boxcox transformations as seen in the code below: 
-
+Certain diagnostics checks ought to be performed before the variable selection process is implemented. First, we check the distribution of the non-transformed outcome variable. In the case of income or household consumption, it is typically expected and preferred that the income/household consumption variable can be transformed into a normally distributed random variable. We apply the log and boxcox transformations as seen in the code below:
 
 ```{r, fig.width = 8}
 
@@ -301,9 +300,9 @@ gridExtra::grid.arrange(grobs = list(p1, p2), nrow = 1)
 
 ```
 
-Several other transformations are also possible including the ordernorm transformation. See `bestNormalize::orderNorm()` documentation for more details. 
+Several other transformations are also possible including the ordernorm transformation. See `bestNormalize::orderNorm()` documentation for more details.
 
-Next, we ensure the candidate variables in the survey and census come from similar distributions. One assumption of the linear mixed effects approach is that the variables selected are drawn from the same distribution. In the following chunk, we apply the `povmap::ebp_test_means()` function to present a table of means for each survey and census and show the results of the standard z-tests. It is common to drop values that reject the null hypothesis (at the 95% level) that the survey variable (for any given variable) has a different mean from the same variable in the census. 
+Next, we ensure the candidate variables in the survey and census come from similar distributions. One assumption of the linear mixed effects approach is that the variables selected are drawn from the same distribution. In the following chunk, we apply the `povmap::ebp_test_means()` function to present a table of means for each survey and census and show the results of the standard z-tests. It is common to drop values that reject the null hypothesis (at the 95% level) that the survey variable (for any given variable) has a different mean from the same variable in the census.
 
 ```{r}
 
@@ -315,7 +314,6 @@ test_dt <- povmap::ebp_test_means(varlist = candidate_vars,
 head(test_dt)
 
 ```
-
 
 However, the `ebp_test_means` function doesn't control for the fact that the variables are national representative at the state level. We implement another variant to the `ebp_test_means` that will allow users to cluster the standard errors at the state level.
 
@@ -405,13 +403,11 @@ head(test_dt)
 
 ```
 
-
-In the next section, we fold the final checks into the variable selection process. We drop variables that are highly correlated and set a sparsity threshold. The sparsity threshold ensures that variables that do not have a certain proportion of non-missing observations are dropped. We have folded both these checks into the `glmnetlasso_vselect()` function. 
-
+In the next section, we fold the final checks into the variable selection process. We drop variables that are highly correlated and set a sparsity threshold. The sparsity threshold ensures that variables that do not have a certain proportion of non-missing observations are dropped. We have folded both these checks into the `glmnetlasso_vselect()` function.
 
 ### The Variable Selection Process
 
-The `glmnetlasso_vselect()` function takes the dependent variable (welfare or income variable) as well as the set of potential candidate variables which just created and applies the lasso methodology (run `here(glmnet::glmnet)` for more details). This includes the option to perform a reproducible n-fold cross validation to reduce the risk of overfitting the model. In this instance, we have run applied this function to select the best predictors of household welfare based on the 3 welfare transformations i.e. 3 separate runs of the function, one for each transformation. See below: 
+The `glmnetlasso_vselect()` function takes the dependent variable (welfare or income variable) as well as the set of potential candidate variables which just created and applies the lasso methodology (run `here(glmnet::glmnet)` for more details). This includes the option to perform a reproducible n-fold cross validation to reduce the risk of overfitting the model. In this instance, we have run applied this function to select the best predictors of household welfare based on the 3 welfare transformations i.e. 3 separate runs of the function, one for each transformation. See below:
 
 ```{r}
 
@@ -569,17 +565,21 @@ bcxglmnet_list <-
 
 ```
 
-Now that we have selected variables for each outcome variable transformation. We are ready to apply this `povmap::ebp()` to estimate a poverty map for Austria. The function will estimate a linear mixed effects model of the income in Austria from which the poverty line will be applied to estimate the poverty rates. Please run `help(povmap::ebp)` for details about the objects produced. 
+Now that we have selected variables for each outcome variable transformation. We are ready to apply this `povmap::ebp()` to estimate a poverty map for Austria. The function will estimate a linear mixed effects model of the income in Austria from which the poverty line will be applied to estimate the poverty rates. Please run `help(povmap::ebp)` for details about the structure of the resulting object produced.
 
 For the proper functioning of the `povmap::ebp` function, the following conditions must be met:
 
-- the arguments `pop_data` and `smp_data` require the survey and census datasets must be of class `data.frame`.
+-   the arguments `pop_data` and `smp_data` require the survey and census datasets must be of class `data.frame`.
 
-- `pop_data` and `smp_data` must contain no missing observations across all the variables. Use the `na.omit()` function to ensure only complete cases are included within each object. 
+-   `pop_data` and `smp_data` must contain no missing observations across all the variables. Use the `na.omit()` function to ensure only complete cases are included within each object.
 
-- All target areas (or domains) within the `smp_domains` must be found within `pop_domains` i.e. for the Austria example, all domains/target areas in the survey must be found in the census. 
+-   All target areas (or domains) within the `smp_domains` must be found within `pop_domains` i.e. for the Austria example, all domains/target areas in the survey must be found in the census.
 
-- `rescale_weights` argument set to TRUE may solve parameter estimation convergence issues. 
+-   `rescale_weights` argument set to TRUE may solve parameter estimation convergence issues. This is not available within the `emdi::ebp()` function. 
+
+-   Notice the specification of the `Ydump` argument. This is one difference between the `emdi::ebp()` and `povmap::ebp()`. This argument returns the result of `L` unit-level welfare simulated predictions from which other poverty estimations maybe carried out, as different from the default results present within `ebp` class object returned by `ebp()`. 
+ 
+-   Also noteworthy, is the use of the `weight_type` argument present within the `povmap::ebp()` but not in the `emdi::ebp()`. Please see documentation for more details.  
 
 ```{r, message=FALSE, warning=FALSE}
 # 
@@ -733,19 +733,34 @@ not_model <- readRDS("data/not_censusmodel.RDS")
 
 ### Post Estimation Diagnostics
 
-- Here we ought to explain all the post-estimation diagnostics
+Once the model has been estimated. It is essential to test the validity of the model based on the model assumptions. Below are the set of typical tests which we will perform: 
 
-- Check the results of estimation in the survey and then into the census in terms of how well we match results aggregated to the state level. 
+#### Checking the quality of in-sample prediction
 
+##### Aggregate Poverty Rates at the lowest level of National Representativeness for EBP vs Direct Poverty Rates
 
-
-
-
+The first test is to ensure the model is able to replicate the welfare distribution within the same survey. If this test fails, there is no reason to expect our model to provide unbiased estimates out of sample. We run the function `ebp_national_pov()` below to compare estimated poverty rates aggregated to the state level to the direct estimates from the survey. We apply the function to each model. Ideally, we want the estimated state poverty rates to be as close as possible to the direct estimates at the same level (typically within the 95% confidence level).
 
 
 ```{r}
 
 #### first let us look at the quality of in-sample prediction
+
+
+#' A function to estimate poverty rates in levels different from the target area
+#' 
+#' This function will take the ebp object (result of ebp()) as well as the population data to estimate 
+#' poverty rates at a level different from the designated target area level stipulated for poverty 
+#' mapping in the `ebp()` function. 
+#' 
+#' @param ebp_obj object of class `"ebp" "emdi"`
+#' @param wgt_var chr, the weight variable name 
+#' @param pop_domain chr, the population domain used for `ebp()`
+#' @param est_domain chr, the estimation domain
+#' @param pop_dt data.frame, the population dataset/census
+#' @param indicators chr, a character or vector of characters for the indicators of interest
+#' 
+#' @import data.table dplyr
 
 ebp_national_pov <- function(ebp_obj,
                              wgt_var,
@@ -814,9 +829,9 @@ ebpsurveypov_dt <-
 ebpsurveypov_dt <- Reduce(f = merge,
                           x = ebpsurveypov_dt)
 
-
 ### we create some fake clusters within the districts to show how to use the survey package
-### to estimate the standard errors on the poverty rates
+### to estimate the standard errors on the poverty rates, ideally these would already exist
+### within your survey
 
 #### for simplicity we will assume there are 5 clusters in each district
 
@@ -850,8 +865,20 @@ ebpsurveypov_dt <- merge(ebpsurveypov_dt,
                          by = "state")
 
 
-#### it is also important to look at the predictive power of the model estimation in the training set (i.e. the survey) at each poverty map
-#### here I show how chart that compares the poverty rates at each poverty ventile and the estimated poverty rates
+```
+
+
+##### Compare Survey EBP Poverty Rates to Direct Poverty Rates at different poverty lines
+
+Another check for the quality of prediction within the survey is testing the predictive power of the model at different poverty lines along the entire income distribution. In the example below, we show compare the predicted poverty rate to the direct poverty rate using each 5th percentile increment in income i.e. using poverty ventile. We implement a function `compare_surveyebp_atpovline()` which computes poverty from the simulated welfare data (produced by `Ydump` argument in ebp()) and the survey at each poverty line. The function allows the user specify the percentiles at which poverty lines will be specified. The default is set at every 5th percentile (`seq(0, 1, 0.05)`). 
+
+We apply `compare_surveyebp_at_povline()` to each of the estimated models in comparison with the direct survey estimates at poverty line ventiles (every 5th percentile). 
+
+```{r}
+
+
+
+### first let's read in the data ydump data
 
 ydumppath_list <- list.files(path = "data/Ydump",
                              pattern = "^unitsurvey_.*Ydump_glmnet.csv",
@@ -875,6 +902,22 @@ names(ydump_dtlist) <-
 
 ### a simple function to carry out the poverty rate comparisons (model vs actual at each poverty ventile, 5% increments) & plot the result
 
+
+#' Compute direct poverty rates and simulated outcome variables at specified poverty lines
+#' 
+#' The function uses the simulated outcome from `povmap::ebp()`'s `Ydump` argument and the survey data to compute estimated and direct poverty    
+#' rates at a specified level than is estimated with `ebp()` at different poverty lines. 
+#' 
+#' @param ydump_data data.frame, the simulated welfare/income data from non-null `Ydump` argument within the `povmap::ebp()`
+#' @param smp_data data.frame, the survey data
+#' @param smp_domains character, a variable name for the domain/geographic level at which poverty rates will be estimated
+#' @param smp_weights character, the weight variable
+#' @param pline_increment numeric vector, a set of percentiles at which poverty rates should be estimated. 
+#' 
+#' @import data.table dplyr
+#' 
+#' @export
+#' 
 compare_surveyebp_atpovline <- function(ydump_data,
                                         smp_data,
                                         smp_domains,
@@ -965,7 +1008,7 @@ svyplinecomp_dt <-
              comp_dt %>%
              rename(ebp = "ebp_poverty.pov") %>%
              mutate(probs = as.numeric(probs)) %>%
-             mutate(diff = ebp - probs) %>%
+             mutate(diff = abs(ebp - probs) / probs) %>%
              mutate(transformation = sub("Ydump", "", name_list))
            
  
@@ -977,6 +1020,13 @@ svyplinecomp_dt <-
 
 svyplinecomp_dt <- Reduce("rbind", svyplinecomp_dt)
 
+
+```
+
+We plot the absolute value of the absolute value of the percent difference between both poverty rates at each ventile as seen in the plot below. 
+
+```{r}
+
 svyplinecomp_dt %>%
   ggplot() +
   geom_line(aes(x = probs,
@@ -984,12 +1034,11 @@ svyplinecomp_dt %>%
                 color = transformation)) + 
   theme_minimal()
 
-
-
 ```
 
 
-### Post Estimation Diagnostics
+#### Evaluating the Standard Normality Assumptions
+
 
 -   Presenting the regression table estimates (use povmap::ebp_reportcoef_table() and then translate into a flextable which can be rendered in Word, PDF or HTML)
 -   Checking that all model assumptions hold (normality assumptions for the miu and epsilon terms), using povmap::ebp_normalityfit() to present skewness and kurtosis for both errors. Then show a function that uses ebp object to plot the distribution of the errors and compute the kolmogrov-smirnov test statistics. We can also include the shapiro-wilks which will break down for larger sample sizes but is equally well known. Another function that produces q-q plots for miu and epsilon terms from ebp object.
@@ -997,8 +1046,6 @@ svyplinecomp_dt %>%
 -   Computing MSE and CVs and computing the statistical gains made from performing small area estimation i.e. in practical terms, how much bigger would the survey have to be the get the same level of precision that SAE now gives us with the census data.
 -   Final validation: EBP estimates vs Direct Estimates (supposedly truth) at the highest resolution level that is considered nationally representative, this is usually the regional level in Africa.
 -   Plotting the poverty map using the ebp object and the shapefile
-
-
 
 ```{r}
 
@@ -1075,6 +1122,7 @@ create_regression_table(coef_table = coef_dt,
 ```
 
 
+
 ```{r}
 
 ### start by explaining that the plot function could be used in R to show the error diagnostics as follows
@@ -1143,9 +1191,8 @@ ebp_kstest(log_model)
 
 ```
 
-
-
 ### CV Estimation
+
 ```{r}
 
 ### it is important to compare Coefficient of Variation between the survey direct estimates and the census computations. 
@@ -1255,34 +1302,3 @@ log_model$ind[c("Domain", "Head_Count")] %>%
 
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
