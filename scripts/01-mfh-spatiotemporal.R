@@ -114,21 +114,125 @@ income_dt <-
 sampsize <- aggregate(income_dt$weight, list(income_dt$prov), sum)[, 2]
 
 
+#' A function to compute variance-covariance matrix from unit level data 
+#' 
+#' This function will compute the variance covariance matrix from the unit level data. 
+#' E.g. household survey with income/expenditure variable to be used for poverty mapping
+#' 
+#' 
+#' @param dt a `data.frame` object i.e. the household survey 
+#' @param y a `character` vector, a list of outcome variables of interest. 
+#' @param weights a `character`, weight variable name, default is NULL
+#' @param povline a `numeric`, the poverty line. Could be one value applied to each 
+#' element of `y` or equal in length to `y`
+#' @param domain `character`, the target area variable name
+#' @export
+#' 
 
-
-covar <- function(x, y, weights = NULL) {
+compute_covar_matrix <- function(dt, y, weights, povline, domain){
   
-  if (is.null(weights)) {
-    weights <- rep(1, length(x))
+  dt <- 
+    dt %>%
+    dplyr::select(y, weights, domain) %>%
+    as.data.frame()
+  
+  ifelseworker <- function(x, y){
+    
+    zz <- ifelse(x < y, 1, 0)
+    
+    return(zz)
+    
   }
   
-  xbar <- weighted.mean(x, weights)
-  ybar <- weighted.mean(y, weights)
+  if (length(povline) == 1 & length(y) > 1){
+    
+    povline <- rep(povline, length(y))
+    
+  }
   
-  covar_value <- sum(weights * (x - xbar) * (y - ybar)) / sum(weights)
+  ind_dt <- 
+    purrr::map2(.x = dt[, y],
+                .y = povline,
+                .f = ~ ifelseworker(.x, .y)) %>%
+    as.data.frame() %>%
+    cbind(dt %>% dplyr::select(domain, weights)) %>%
+    as.data.table()
   
-  return(covar_value)
+  ind_dt[, paste0("avg", y) :=
+         lapply(.SD, function(x) weighted.mean(x, w = get(weights))), 
+         .SDcols = y, 
+         by = domain]
+    
+  ### compute the variance-covariance matrices
+  ##### create the appropriate list of pairs
+  pair_list <- c(lapply(y, rep, 2),
+                 combn(y, 2, simplify = FALSE))
+  
+  ind_dt <- 
+  ind_dt %>%
+    rename(weights = weights)
+  
+  
+  popsize <- aggregate(ind_dt$weights,
+                       list(ind_dt[[domain]]),
+                       sum)[,2]
+
+
+  ### computation time!
+  comp_covar <- function(vars){
+    
+    ind_dt <- 
+      ind_dt %>%
+      mutate(ind1 = !!sym(vars[[1]]),
+             ind2 = !!sym(vars[[2]]),
+             avg1 = !!sym(paste0("avg", vars[[1]])),
+             avg2 = !!sym(paste0("avg", vars[[2]])))
+
+    prov_dt <- 
+      ind_dt %>%
+      mutate(v = ifelse(ind1 == 1, 
+                        (weights * (ind1 - avg1) * (ind2 - avg2)), 
+                        0)) %>%
+      group_by(!!sym(domain)) %>%
+      summarize(v = sum(v, na.rm = TRUE)) %>%
+      mutate(v = v / popsize)
+    
+    return(prov_dt)
+
+  }
+  
+  var_dt <- 
+    lapply(X = pair_list,
+           comp_covar)
+  
+  ### construct names
+  pair_list <- lapply(pair_list,
+                      function(x){
+                        
+                        zz <- paste0("v_", paste(x, collapse = ""))
+                        
+                        return(zz)
+                        
+                      })
+  var_dt <- 
+    mapply(FUN = function(dt, y){
+      
+      dt <- dt %>% rename(!!sym(y) := v)
+      
+      return(dt)
+      
+    }, SIMPLIFY = FALSE,
+    dt = var_dt,
+    y = pair_list)
+  
+  var_dt <- Reduce(f = merge,
+                   x = var_dt)
+   
+  return(var_dt)
+  
+  
 }
+
 
 ### include province poverty rates 
 povcols <- c("y2012", "y2013", "y2014")
@@ -141,19 +245,24 @@ income_dt <-
     by = prov]
 
 
-### now lets include the covariance matrix as well
-varcols <- c("v12", "v13", "v14", "v1213", "v1214", "v1314")
+var_dt <- cov.wt(x = income_dt[, c("y2012", "y2013", "y2014")],
+                 wt = income_dt$weight)
 
-income_dt[, sampsize := sum(weight, na.rm = TRUE), by = prov]
 
-cov_vals <- income_dt[, .(
-  v12   = covar(x = y2012, y = y2012, weights = weight),
-  v13   = covar(x = y2013, y = y2013, weights = weight),
-  v14   = covar(x = y2014, y = y2014, weights = weight),
-  v1213 = covar(x = y2012, y = y2013, weights = weight),
-  v1214 = covar(x = y2012, y = y2014, weights = weight),
-  v1314 = covar(x = y2013, y = y2014, weights = weight)
-)]
+# ### now lets include the covariance matrix as well
+# var_dt <- compute_covar_matrix(dt = income_dt,
+#                                y = c("income2012", "income2013", "income2014"),
+#                                weights = "weight",
+#                                povline = c(unique(income_dt$povline2012),
+#                                            unique(income_dt$povline2013),
+#                                            unique(income_dt$povline2014)),
+#                                domain = "prov")
+# 
+# income_dt[, sampsize := sum(weight, na.rm = TRUE), by = prov]
+
+var_dt <- as.numeric(c(diag(var_dt$cov), var_dt$cov[lower.tri(var_dt$cov, diag = FALSE)]))
+
+names(var_dt) <- c("v1", "v2", "v3", "v12", "v13", "v23")
 
 ### create the province level dataset
 
@@ -173,7 +282,7 @@ prov_dt <-
   income_dt[, lapply(.SD, weighted.mean, w = weight), 
                      .SDcols = c(candidate_vars, "y2012", "y2013", "y2014"),
                      by = "prov"] %>%
-  mutate(!!!as.list(cov_vals))
+  mutate(!!!as.list(var_dt))
 
   
 #### lets do some variable selection
@@ -230,6 +339,8 @@ stepAIC_wrapper <- function(dt, xvars, y) {
 
 outcome_list <- c("y2012", "y2013", "y2014")
 
+candidate_vars <- candidate_vars[!candidate_vars %in% c("yos", "abc", "poi",
+                                                        "sam", "ntl", "ips")]
 
 stepaicmodel_list <- 
   mapply(x = outcome_list,
@@ -268,14 +379,14 @@ mfh_formula <-
 
 ### now lets estimate all 4 models
 
-model0_obj <- eblupUFH(mfh_formula, vardir = varcols, data = prov_dt)
-model1_obj <- eblupMFH1(mfh_formula, vardir = varcols, data = prov_dt)
-model2_obj <- eblupMFH2(mfh_formula, vardir = varcols, data = prov_dt)
-model3_obj <- eblupMFH3(mfh_formula, vardir = varcols, data = prov_dt, MAXITER = 10000)
+
+model0_obj <- eblupUFH(mfh_formula, vardir = names(var_dt), data = prov_dt)
+model1_obj <- eblupMFH1(mfh_formula, vardir = names(var_dt), data = prov_dt)
+model2_obj <- eblupMFH2(mfh_formula, vardir = names(var_dt), data = prov_dt, MAXITER = 10000)
+model3_obj <- eblupMFH3(mfh_formula, vardir = names(var_dt), data = prov_dt, MAXITER = 10000)
 
 
 ### lets check the normality of the random effects
-model3_obj$fit$refvarTest
 
 
 

@@ -1,0 +1,101 @@
+Function pbmcpeMFH3()
+
+Description 
+
+obtains estimators of the mean cross product errors of 
+the EBLUPs obtained at different time instants under a multivariate 
+Fay-Herriot (MFH) model with homoscedastic area-time effects (MFH2 model), 
+by a parametric bootstrap method.
+
+Usage
+
+pbmcpeMFH3(formula,vardir,nB=100,data)
+
+Arguments
+
+formula 
+an object of class list of formula, describe the model to be fitted
+
+vardir  
+if data is available, it is vector containing name of sampling variances of direct estimators. if not, it is data frame of sampling variances of direct estimators. The order is : var1, var2, . , var(k) , cov12, . cov1k, cov23, . , cov(k-1)(k)
+
+data    
+dataframe containing the variables named in formula and vardir
+
+Details 
+
+This function uses random number generation. To fix the
+seed, use set.seed.
+
+A typical model has the form response ~ terms where response is
+the (numeric) response vector and terms is a series of terms which
+specifies a linear predictor for response. A terms specification
+of the form first + second indicates all the terms in first
+together with all the terms in second with duplicates removed.
+
+A formula has an implied intercept term. To remove this use either
+y ~ x - 1 or y ~ 0 + x. See formula for more details of allowed
+formulae.
+
+Value 
+
+The function returns a list with the following objects:
+
+eblup a nD*nT matrix with the EBLUPs for each of the nT time instants. 
+
+mse a nD*nT matrix containing the parametric bootstrap
+mean squared error estimates for the nD domains and nT time
+instants.
+
+mcpe a nD*(nT*(nT-1)/2) matrix containing the parametric bootstrap
+mean crossed product error estimates for the nD domains, and the 
+combinations of time instants 
+(1,2),...,(1,nT),(2,3),...,(2,nT),...,(nT-1,nT).
+
+Author(s) 
+
+Isabel Molina and Eva Romero.
+
+References 
+
+- Benavent, Roberto & Morales, Domingo. (2015). Multivariate 
+Fay-Herriot models for small area estimation. Computational 
+Statistics & Data Analysis. 100. 372-390. 
+DOI: 10.1016/j.csda.2015.07.013.
+
+- Rao, J.N.K & Molina. (2015). Small Area Estimation 2nd Edition. 
+New York: John Wiley and Sons, Inc.
+
+- Ubaidillah, Azka et al. (2019). Multivariate Fay-Herriot models 
+for small area estimation with application to household 
+consumption per capita expenditure in Indonesia. Journal of 
+Applied Statistics. 46:15. 2845-2861. 
+DOI: 10.1080/02664763.2019.1615420.
+
+See Also eblupMFH3
+
+Examples 
+
+# Load libraries and function
+library(MASS)
+library(msae)
+source("Function_pbmcpeMFH3.R")
+
+# Load dataset
+data(datasae3)
+
+# Compute EBLUP and MSE of Y1 Y2 and Y3  based on Model 3
+# using auxiliary variables X1 and X2 for each dependent variable
+
+Fo <- list(f1=Y1~X1+X2,
+           f2=Y2~X1+X2,
+           f3=Y3~X1+X2)
+vardir <- c("v1", "v2", "v3", "v12", "v13", "v23")
+B<-100
+set.seed(222)
+
+resultMCPE<-pbmcpeMFH3(formula=Fo,vardir=vardir,nB=B,data=datasae3)
+  
+eblup<-resultMCPE$eblup;eblup
+mse<-resultMCPE$mse;mse
+mcpe<-resultMCPE$mcpe;mcpe
