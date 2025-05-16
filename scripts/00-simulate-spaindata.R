@@ -40,13 +40,14 @@ simulate_correlated_vector <- function(x,
 simulate_ar1_process <- function(x, 
                                  rho,
                                  seed = 123,
-                                 c = 0){
+                                 c = 0,
+                                 h = 10){
   
   set.seed(seed)
   
-  rho <- rho * rnorm(length(x))/10
+  rho <- rho + rnorm(length(x))/h
   
-  y <- c + (rho + 1)*x 
+  y <- c + (rho)*x 
   
   return(y)
   
@@ -58,30 +59,42 @@ simulate_ar1_process <- function(x,
 incomedata <- 
   incomedata %>%
   rename(income2012 = "income") %>%
-  mutate(income2013 = simulate_ar1_process(x = income2012, rho = 0.8, c = 50),
-         income2014 = simulate_ar1_process(x = income2013, rho = 0.7, c = 0))
+  mutate(income2013 = simulate_ar1_process(x = income2012, rho = 1.01, c = 0),
+         income2014 = simulate_ar1_process(x = income2013, rho = 1.05, c = 0, h = 2))
 
 
-#### include some variables
+### check correlation matrix for all numeric variables
+incomedata %>%
+  dplyr::select(where(is.numeric)) %>%
+  cor()
+### clearly not a lot of correlated variables so lets simulate some
 
-set.seed(123)
 
-incomedata <- 
-  incomedata %>%
-  mutate(
-    ntl = 0.7 * income2012 + 0.3 * income2013*rnorm(n = nrow(.)), 
-    yos = 0.6 * income2013 + 0.4 * income2014*rnorm(n = nrow(.)), 
-    abc = 0.8 * income2012 + 0.2 * income2014*rnorm(n = nrow(.)),
-    poi = 0.8 * income2012 + 0.7 * income2012*rnorm(n = nrow(.)),
-    ips = income2014 + 0.9 * income2013*rnorm(n = nrow(.)),
-    sam = 0.4 * income2013 + 0.6 * income2012*rnorm(n = nrow(.))
-  )
+# Create a helper function to simulate variables correlated with income
+simulate_variable <- function(target, 
+                              rho = 0.6, 
+                              noise_sd = 1) {
+  
+  set.seed(123)
+  # Standardize the target
+  z <- scale(target)
+  
+  # Simulate a new variable correlated with z
+  new_var <- rho * z + sqrt(1 - rho^2) * rnorm(length(z), sd = noise_sd)
+  
+  return(as.numeric(scale(new_var)))
+  
+}
+
+ 
+
+
 ### include poverty line
-incomedata <- 
+incomedata <-
   incomedata %>%
-  mutate(povline2012 = 6557.143,
-         povline2013 = 6557.143 * 1.1,
-         povline2014 = 6557.143 * 1.2)
+  mutate(povline2012 = 0.6*median(income2012),
+         povline2013 = 0.6*median(income2013),
+         povline2014 = 0.6*median(income2013))
 
 
 ### lets test the correlation in poverty rates across the years
@@ -94,7 +107,28 @@ incomedata %>%
   .[, lapply(.SD, weighted.mean, w = weight), 
     .SDcols = c("poor2012", "poor2013", "poor2014"),
     by = c("provlab", "prov")]
-  
+
+#### create some correlated variables at the province level and simulate them back into
+#### the income data
+
+set.seed(123)
+
+pov_dt <-
+  pov_dt %>%
+  mutate(
+    abs = as.numeric(scale(log(poor2012 + 1) + rnorm(n(), 0, 0.07))),
+    ntl = as.numeric(scale(sqrt(poor2013 + abs(min(poor2013)) + 1) + rnorm(n(), 0, 0.2))),
+    aec = as.numeric(scale((as.numeric(scale(poor2014)))^2 + rnorm(n(), 0, 0.2))),
+    schyrs = as.numeric(scale(qnorm((rank(poor2012) - 0.5) / n()) + rnorm(n(), 0, 0.2))),
+    mkt = as.numeric(scale(poor2013 + runif(n(), -0.15, 0.15)))
+  )
+
+### merge back into the income data
+incomedata <- 
+  incomedata %>%
+  merge(pov_dt %>%
+          dplyr::select(abs, ntl, aec, schyrs, mkt, provlab, prov),
+        by = c("provlab", "prov"))
 
 
 ### combine the datasets and include a shapefile for proximity estimation

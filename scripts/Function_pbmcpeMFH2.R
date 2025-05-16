@@ -14,8 +14,8 @@
 ###
 ###############################################################################
 
-pbmcpeMFH2 <-function(formula,vardir,nB=100,data)
-{
+pbmcpeMFH2 <-function(formula,vardir,nB=100,data){
+  
   nD<-nrow(data)
   nT<-length(formula)
   M <- nD*nT
