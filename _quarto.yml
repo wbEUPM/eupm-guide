@@ -9,7 +9,7 @@ book:
     - index.qmd
     - intro.qmd
     - data.qmd
-    - fh.qmd
+    # - fh.qmd
     - ul.qmd
     - references.qmd
 
@@ -18,6 +18,13 @@ bibliography: references.bib
 format:
   html:
     theme: cosmo
+    code-fold: false
+    code-tools: true
+    code-overflow: wrap
+    code-block-bg: true
+    code-block-border-left: "#31BAE9"
+    highlight-style: github
+    
   pdf:
     documentclass: scrreprt
 
