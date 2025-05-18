@@ -2,12 +2,9 @@
 
 Website is available at: <https://wbeupm.github.io/eupm-guide/>
 
+# News:
 
-# News: 
-
--   2025-05-17: Unit Level modelling is added to the main. 
-
-
+-   2025-05-17: Unit Level modelling is added to the main.
 
 # Development notes:
 
