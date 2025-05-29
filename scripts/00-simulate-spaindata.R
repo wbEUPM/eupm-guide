@@ -130,10 +130,6 @@ incomedata <-
           dplyr::select(abs, ntl, aec, schyrs, mkt, provlab, prov),
         by = c("provlab", "prov"))
 
-a <- incomedata %>%
-  merge(pov_dt %>%
-          dplyr::select(abs, ntl, aec, schyrs, mkt, provlab, prov),
-        by = c("provlab", "prov"))
 ### combine the datasets and include a shapefile for proximity estimation
 shp_dt <- sf::read_sf("data/shapes/georef-spain-provincia-millesime.shp")
 
