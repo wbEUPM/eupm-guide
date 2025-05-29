@@ -10,6 +10,12 @@ pacman::p_load(msae, tidyverse, data.table, sae, car, sf, pps)
 ### include a poverty line and calculate some indicators
 data("incomedata")
 
+# Draw 25% sample per province from incomedata
+n_per_province <- round(0.25*(as.data.frame(table(incomedata$prov))$Freq), 0) # adjust as needed
+set.seed(123)
+sample_id <- stratsrs(incomedata$prov, n_per_province) 
+incomedata <- incomedata[sample_id,]
+
 simulate_correlated_vector <- function(x, 
                                        rho){
   
@@ -124,7 +130,10 @@ incomedata <-
           dplyr::select(abs, ntl, aec, schyrs, mkt, provlab, prov),
         by = c("provlab", "prov"))
 
-
+a <- incomedata %>%
+  merge(pov_dt %>%
+          dplyr::select(abs, ntl, aec, schyrs, mkt, provlab, prov),
+        by = c("provlab", "prov"))
 ### combine the datasets and include a shapefile for proximity estimation
 shp_dt <- sf::read_sf("data/shapes/georef-spain-provincia-millesime.shp")
 
@@ -139,7 +148,5 @@ spain_dt <-
         by.y = "prov_code")
 
 saveRDS(spain_dt, "data/shapes/spainshape.RDS")
-
-
 
 saveRDS(incomedata, "data/incomedata.RDS")
