@@ -1,26 +1,47 @@
-# Fay--Herriot
+---
+title: "My Document"
+bibliography: references.bib
+---
 
-This chapter describes how to run the simple Fay-Herriot using the real data from Ghana. If there is a need to consider the temporal autocorrelation or spacial correlation, please refer to the next chapter.
+# Area-level estimation: Fay-Herriot model
 
-FH estimation procedure: Step 1 Compute the selected direct area estimators Y, and estimators of their corresponding sampling variances (perhaps previously smoothed)
+## Introduction
 
-Step 2 Select the aggregated auxiliary variables at the area level for the FH model. A simple approach is to perform a model selection procedure in a linear regression model without the area effects, e.g., using stepwise selection, exhaustive search or LASSO.
+In this section, we will present a whole estimation procedure of the standard area-level model introduced by [@Fay1979] in R. As with the disclaimer in the preceding section, this practical manual is not intended to serve as a theoretical introduction to area-level models. Instead, it offers a set of straightforward and practical R scripts, accompanied by clear explanations, to demonstrate how these tasks can be carried out in R. For a theoretical foundation please refer to [@Fay1979] and [@RaoMolina2015]. In addition to theoretical information, the vignette "A framework for producing small area estimates based on area-level models in R" of the R package emdi ([@Harmening2023]) provides further code examples for the FH model.
 
-Step 3 Fit the model and check the FH model assumptions, including linearity, normality of predicted area effects and standardized model residuals, and the presence of outlying areas.
+In this chapter, we will describe how to run the univariate (standard) Fay-Herriot (FH) using simulated income data from Spain. The estimation procedure is explained step by step.
 
-Step 4 In case of clear systematic model departures, the model should be changed. In case of isolated departures because of outlying areas, either do not obtain the FH estimate for those areas or change some aspect of the model or the data. Then, repeat Steps 2 and 3.
+Step 1: Data preparation. Compute the direct estimates and their corresponding variances on the area-level and eventually perform variance smoothing. Aggregate the available auxiliary variables to the same area level and combine both input data.
 
-Step 5 If the model assumptions hold, using the above direct estimates, estimated sampling variances and the selected auxiliary variables, compute the FH estimators and their estimated MSEs.
+Step 2: Model selection. Select the aggregated auxiliary variables at the area level for the FH model using a stepwise selection based on information criteria like the Akaike, Bayesian or Kullback information criteria.
 
-## Data and variables preparation
+Step 3: Model estimation of FH point estimates and their mean squared error (MSE) estimates as uncertainty measure. Eventually apply a transformation.
 
-The example code in this guideline uses the Ghana data from the [summer school](https://github.com/pcorralrodas/wb_sae_training/tree/SummerU_2024).
+Step 4: Assessment of the estimated model. Check the FH model assumptions, including linearity, normality of predicted area effects and standardized model residuals. When violations of the model assumtions are detected, the application of a transformation might help. Repeat Step 3 including a transformation and check again the model assumptions.
+
+Step 5: Comparison of the FH results with the direct estimates.
+
+Step 6: Benchmark the FH point estimates for consistency with higher results.
+
+Step 7: Preparation of the results. Create tables and/or maps of results,
+
+Step 8: Saving the results. One option is to export the results to known formats like Excel or OpenDocument Spreadsheets.
+
+## Data and preparation
 
 ### Load required libraries
 
-The following is the list of libraries required to run the codes. If it is the first time to use the library, first you need to install the packages.
+First of all, load the required R libraries. The code automatically installs the packages that are not yet installed and loads them. If you need further packages, please add them to the list of `p_load` which contains the packages required to the run the codes.
 
 ```{r libraries, message = FALSE, warning = FALSE}
+if (sum(installed.packages()[,1] %in% "pacman") != 1){
+  
+  install.packages("pacman")
+  
+}
+
+pacman::p_load(sf, data.table, tidyverse, car, msae, sae, survey, spdep, emdi)
+
 library(readstata13)      # For reading .dta files
 library(dplyr)      # For data manipulation
 library(sae)       # For SAE modeling
@@ -37,7 +58,7 @@ First, we need to download the dataset "FHcensus_district.dta" which contains th
 
 ```{r load_data, message = FALSE, warning = FALSE}
 
-data_agg <- read.dta13("https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/input/FHcensus_district.dta")
+comb_Data_poor <- readRDS("data/comb_Data_poor.RDS")
 
 ```
 
@@ -70,15 +91,15 @@ First we normalize all the auxiliary variables, and then create the area ID, whi
 
 ```{r normalize_variable, message = FALSE, warning = FALSE}
 # Normalize the auxiliary variables and create area ID
-data_agg <- data_agg %>%
-  mutate(across(all_of(vars), ~ ifelse(!is.na(.), (.-mean(.))/sd(.), NA))) %>%
-  mutate(D = region * 100 + district) %>% 
-  dplyr::select(-district) %>%
+data_agg <- data_agg |>
+  mutate(across(all_of(vars), ~ ifelse(!is.na(.), (.-mean(.))/sd(.), NA))) |>
+  mutate(D = region * 100 + district) |> 
+  dplyr::select(-district) |>
   rename(district = D)
 
 # Add regional dummies
 data_agg <- dummy_cols(data_agg, select_columns = "region")
-data_agg <- data_agg %>% rename_with(~str_replace(.,"region_",replacement = "thereg"),starts_with("region_")) 
+data_agg <- data_agg |> rename_with(~str_replace(.,"region_",replacement = "thereg"),starts_with("region_")) 
 hhvars <- c(vars, "thereg1", "thereg2", "thereg3", "thereg4", "thereg5","thereg6", "thereg7", "thereg8", "thereg9") #, "thereg10")
 ```
 
@@ -99,7 +120,7 @@ combined_data <- combine_data(
 ### Variance smoothing
 
 ```{r variance_smoothing, message = FALSE, warning = FALSE}
-combined_data <- combined_data %>%
+combined_data <- combined_data |>
   mutate(
     log_s2 = log(dir_fgt0_var),
     logN = log(N),
@@ -115,7 +136,7 @@ summary(fit)
 phi2 <- summary(fit)$sigma^2
 combined_data$xb_fh <- predict(fit, combined_data)
 
-combined_data <- combined_data %>%
+combined_data <- combined_data |>
   mutate(
     exp_xb_fh = exp(xb_fh),
     smoothed_var = exp_xb_fh * (sum(dir_fgt0_var, na.rm = TRUE) / sum(exp_xb_fh, na.rm = TRUE)),
@@ -125,15 +146,15 @@ combined_data <- combined_data %>%
   )
 ```
 
-## Fay-Herriot SAE modeling
+## Model selection
 
 ### Model preparation
 
 FH does not run if there is any missing value in the dataset, and therefore, any variable with missing value should be removed in advance.
 
-```{r fh_model, message = FALSE, warning = FALSE}
+```{r fh_arcsin, message = FALSE, warning = FALSE}
 form <- as.formula(paste("dir_fgt0 ~",
-                         hhvars %>% paste(collapse = " + ")))
+                         hhvars |> paste(collapse = " + ")))
 
 rowsNAcovarites <- rowSums(sapply(combined_data[, all.vars(form)[-1]], is.na))
 combined_data <- combined_data[rowsNAcovarites == 0, ]
@@ -152,25 +173,19 @@ cor_data <- cor(na.omit(combined_data[, hhvars]))
 apply(cor_data, MARGIN = 2, FUN = function(x) which(abs(x) > 0.8))
 ```
 
-## Model creation and variable selection
+### Model creation and variable selection
 
-In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a a bias-corrected backtransformation ("bc"). Additionally, the effective sample size is needed for the arcsin transformation.
+In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a a bias-corrected backtransformation ("bc"). Additionally, the effective sample size, which equals the sample size of each area divided by the design effect, is needed for the arcsin transformation. With the help of the step function of package emdi, we perform a variable selection based on the AIC criterion and directly get the model with fewer variables.
 
-```{r fh_model2, message = FALSE, warning = FALSE}
-fh_model <- fh(fixed = form, vardir = "dir_fgt0_var", 
-               combined_data = combined_data, domains = "district", 
-               method = "ml",
-               transformation = "arcsin", backtransformation = "bc",
-               eff_smpsize = "N"
-               )
-```
+```{r model_select, message = FALSE, warning = FALSE}
+comb_Data_poor <- comb_Data_poor |>
+  mutate(n_eff = n/DEff.poor)
 
-### Variable selection
-
-Here, we perform a variable selection based on the AIC criterion and directly get the model with fewer variables.
-
-```{r fh_model_refinement1, message = FALSE, warning = FALSE}
-fh_model <- step(fh_model, criteria = "AIC")
+fh_start <- step(fh(
+  fixed = poor ~ abs + ntl + aec + schyrs + mkt,
+  vardir = "vardir", combined_data = comb_Data_poor, domains = "prov",
+  method = "ml", transformation = "arcsin", backtransformation = "bc",
+  eff_smpsize = "n_eff", MSE = FALSE)) 
 ```
 
 ### Function to remove the variables with high VIF
@@ -217,42 +232,46 @@ hhvars3 <- stepwise_vif(data3, hhvars2, weight = rep(1,nrow(data3)), threshold =
 print(hhvars3)
 ```
 
+## Model estimation of FH point and their MSE estimates.
+
+```{r model_est, message = FALSE, warning = FALSE}
+fh_arcsin <- fh(
+  fixed = formula(fh_start),
+  vardir = "vardir", combined_data = comb_Data_poor, domains = "prov",
+  method = "ml", transformation = "arcsin", backtransformation = "bc",
+  eff_smpsize = "n_eff", MSE = TRUE, mse_type = "boot", B = c(50, 0)) 
+```
+
 ### Comparison of the different FH methods
 
 The commonly used variance estimation methods (e.g. ml/reml) may produce negative variance estimates that are supposed to be strictly positive. Negative variance estimates are set to zero resulting in zero estimates of the shrinkage factor. Therefore no weight is put on the direct estimator ignoring its possible reliability. This poses a problem especially when the number of areas is small. Check the variance estimates of the model and use one of the adjusted variance estimation methods of package emdi (e.g. ampl_yl) in case the variance equals zero.
 
-```{r fh_model_comparison, message = FALSE, warning = FALSE}
-fh_model$model$variance
+```{r fh_arcsin_comparison, message = FALSE, warning = FALSE}
+fh_arcsin$model$variance
 
-if (fh_model$model$variance == 0){
-  fh_model$call$method <- "ampl_yl"
-  fh_model <- eval(fh_model$call)
+if (fh_arcsin$model$variance == 0){
+  fh_arcsin$call$method <- "ampl_yl"
+  fh_arcsin <- eval(fh_arcsin$call)
 }
 
 ```
 
 ### Obtain SAE-FH estimates
 
-```{r fh_model_final, message = FALSE, warning = FALSE}
+```{r fh_arcsin_final, message = FALSE, warning = FALSE}
 # Summary statistics of EBLUP estimates
-summary(fh_model$ind$FH)
+summary(fh_arcsin$ind$FH)
 
 # Summary statistics of MSE estimates
-summary(fh_model$ind$FH)
+summary(fh_arcsin$ind$FH)
 ```
 
-## Assessment of the model
+## Assessment of the estimated model.
 
-The summary method of emdi provides additional information about the data and model components,
-in particular the chosen estimation methods, the number of domains, the log-likelihood, the information
-criteria by Marhuenda et al. (2014), the adjusted R2 of a standard linear model and the adjusted R2
-especially for FH models proposed by Lahiri & Suntornchost (2015). Additionally, measures to validate
-model assumptions about the standardized realized residuals and the random effects are provided: skewness and kurtosis (skewness and kurtosis of package moments, Komsta and Novomestky, 2015) of the
-standardized realized residuals and the random effects and the test statistics with corresponding p value
-of the Shapiro-Wilks-test for normality of both error terms
+The summary method of emdi provides additional information about the data and model components, in particular the chosen estimation methods, the number of domains, the log-likelihood, the information criteria by Marhuenda et al. (2014), the adjusted R2 of a standard linear model and the adjusted R2 especially for FH models proposed by Lahiri & Suntornchost (2015). Additionally, measures to validate model assumptions about the standardized realized residuals and the random effects are provided: skewness and kurtosis (skewness and kurtosis of package moments, Komsta and Novomestky, 2015) of the standardized realized residuals and the random effects and the test statistics with corresponding p value of the Shapiro-Wilks-test for normality of both error terms.
 
 ```{r summary, message = FALSE, warning = FALSE}
-summary(fh_model)
+summary(fh_arcsin)
 ```
 
 ### Diagnostic plots
@@ -260,19 +279,36 @@ summary(fh_model)
 We produce normal quantile-quantile (Q-Q) plots of the standardized realized residuals and random effects and plots of the kernel densities of the distribution of both error terms.
 
 ```{r plot, message = FALSE, warning = FALSE}
-plot(fh_model)
+plot(fh_arcsin)
 ```
 
-### Compare the FH to the direct results 
+## Comparison of the FH results with the direct estimates.
 
 We produce a scatter plot proposed by Brown et al. (2001) and a line plot. Besides the direct and FH estimates, the plot contains the fitted regression and the identity line. Both lines should not differ too much. Preferably, the model-based (FH) estimates should track the direct estimates within the line plot especially for domains with a large sample size/small MSE of the direct estimator. The input arguments MSE and CV of compare_plot can be set to TRUE leading to two extra plots. The MSE/CV estimates of the direct and model-based (FH) estimates are compared via boxplots and ordered scatter plots.
 
-The function compare enables the user to compute a goodness of fit diagnostic (Brown et al.,
-2001) and a correlation coefficient of the direct estimates and the estimates of the regression-synthetic part of the FH model (Chandra et al., 2015). Following Brown et al. (2001), the difference between the model-based estimates and the direct estimates should not be significant (null hypothesis).
+The function compare enables the user to compute a goodness of fit diagnostic (Brown et al., 2001) and a correlation coefficient of the direct estimates and the estimates of the regression-synthetic part of the FH model (Chandra et al., 2015). Following Brown et al. (2001), the difference between the model-based estimates and the direct estimates should not be significant (null hypothesis).
 
 ```{r compare, message = FALSE, warning = FALSE}
-compare_plot(fh_model, CV = TRUE)
-compare(fh_model)
+compare_plot(fh_arcsin, CV = TRUE)
+compare(fh_arcsin)
+
+```
+
+## Benchmark the FH point estimates for consistency with higher results.
+
+```{r benchmarking, message = FALSE, warning = FALSE}
+fh_bench <- benchmark(fh_arcsin,
+                      benchmark = 0.2165049,
+                      share = comb_Data_poor$ratio_n, 
+                      type = "ratio",
+                      overwrite = TRUE)
+
+```
+
+## Preparation of the results.
+
+```{r res_prep, message = FALSE, warning = FALSE}
+estimators(fh_arcsin, MSE = TRUE, CV = TRUE)
 
 ```
 
@@ -283,13 +319,13 @@ compare(fh_model)
 
 ```
 
-## Save the final results
+## Saving the results.
 
 ### Save and output Final dataset
 
 ```{r save, message = FALSE, warning = FALSE}
-write.excel(fh_model,
-  file = "fh_model_output.xlsx",
+write.excel(fh_arcsin,
+  file = "fh_arcsin_output.xlsx",
   MSE = TRUE, CV = TRUE
 )
 ```
