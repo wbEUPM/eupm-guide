@@ -7,10 +7,11 @@ book:
   date: "2/12/2025"
   chapters:
     - index.qmd
-    - intro.qmd
-    - data.qmd
+    - price-adj.qmd
+    #- intro.qmd
+    #- data.qmd
     # - fh.qmd
-    - ul.qmd
+    #- ul.qmd
     - references.qmd
 
 bibliography: references.bib
