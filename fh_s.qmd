@@ -17,7 +17,7 @@ Step 2: Model selection. Select the aggregated auxiliary variables at the area l
 
 Step 3: Model estimation of FH point estimates and their mean squared error (MSE) estimates as uncertainty measure. Eventually apply a transformation.
 
-Step 4: Assessment of the estimated model. Check the FH model assumptions, including linearity, normality of predicted area effects and standardized model residuals. When violations of the model assumtions are detected, the application of a transformation might help. Repeat Step 3 including a transformation and check again the model assumptions.
+Step 4: Assessment of the estimated model. Check the FH model assumptions, including linearity, normality of predicted area effects and standardized model residuals. When violations of the model assumptions are detected, the application of a transformation might help. Repeat Step 3 including a transformation and check again the model assumptions.
 
 Step 5: Comparison of the FH results with the direct estimates.
 
@@ -40,82 +40,19 @@ if (sum(installed.packages()[,1] %in% "pacman") != 1){
   
 }
 
-pacman::p_load(sf, data.table, tidyverse, car, msae, sae, survey, spdep, emdi)
+pacman::p_load(sae, survey, spdep, emdi, data.table, MASS, caret, dplyr)
 
-library(readstata13)      # For reading .dta files
-library(dplyr)      # For data manipulation
-library(sae)       # For SAE modeling
-library(car)        # For VIF calculation
-library(ggplot2)    # For histogram and Q-Q plots
-library(fastDummies) # Create dummy variables
-library(stringr) # Wrappers for string operators
-library(emdi) # For SAE modeling
 ```
 
 ### Load the dataset
 
-First, we need to download the dataset "FHcensus_district.dta" which contains the list of aggregated auxiliary variables.
+First, we need to load the dataset "comb_Data_poor.RDS" which contains the direct estimates ("poor") and their variances ("vardir"), the sample sizes ("n"), the design effects ("DEff.poor") and the auxiliary variables.
 
 ```{r load_data, message = FALSE, warning = FALSE}
-
 comb_Data_poor <- readRDS("data/comb_Data_poor.RDS")
-
+summary(comb_Data_poor)
 ```
 
-### Define the variable list
-
-The following is the list of candidate auxiliary variables we use for this example.
-
-```{r list_variable, message = FALSE, warning = FALSE}
-vars <- c("male", "head_age", "age", "depratio", "head_ghanaian", "ghanaian",
-          "head_ethnicity1", "head_ethnicity2", "head_ethnicity3", "head_ethnicity4",
-          "head_ethnicity5", "head_ethnicity6", "head_ethnicity7", "head_ethnicity8",
-          "head_ethnicity9", "head_birthplace1", "head_birthplace2", "head_birthplace3",
-          "head_birthplace4", "head_birthplace5", "head_birthplace6", "head_birthplace7",
-          #"head_birthplace8", 
-          "head_birthplace9", "head_birthplace10", "head_birthplace11",
-          "head_religion1", "head_religion2", "head_religion3", "head_religion4", "christian",
-          "married", "noschooling", "head_schlvl1", "head_schlvl2", "head_schlvl4", "head_schlvl5",
-          "employed", "head_empstatus1", "head_empstatus2", "head_empstatus3", "head_empstatus4",
-          "head_empstatus5", "head_empstatus6", "head_empstatus8", "head_empstatus9", "employee",
-          "internetuse", "fixedphone", "pc", "aghouse", "conventional", "wall2", "wall3", "floor2",
-          "floor3", "roof1", "roof2", "roof3", "tenure1", "tenure3", "rooms", "bedrooms", "lighting2",
-          "lighting3", "lighting4", "water_drinking1", "water_drinking3", "water_drinking4",
-          "water_general2", "water_general3", "fuel1", "fuel2", "fuel3", "toilet1", "toilet3",
-          "toilet4", "toilet5", "solidwaste1", "solidwaste2", "solidwaste3")
-```
-
-### Normalize variables and create D variable
-
-First we normalize all the auxiliary variables, and then create the area ID, which in this case is the combination of region and district. Then, create the regional dummies to be added as auxiliary variables.
-
-```{r normalize_variable, message = FALSE, warning = FALSE}
-# Normalize the auxiliary variables and create area ID
-data_agg <- data_agg |>
-  mutate(across(all_of(vars), ~ ifelse(!is.na(.), (.-mean(.))/sd(.), NA))) |>
-  mutate(D = region * 100 + district) |> 
-  dplyr::select(-district) |>
-  rename(district = D)
-
-# Add regional dummies
-data_agg <- dummy_cols(data_agg, select_columns = "region")
-data_agg <- data_agg |> rename_with(~str_replace(.,"region_",replacement = "thereg"),starts_with("region_")) 
-hhvars <- c(vars, "thereg1", "thereg2", "thereg3", "thereg4", "thereg5","thereg6", "thereg7", "thereg8", "thereg9") #, "thereg10")
-```
-
-### Merge with direct estimates and create region indicators
-
-The direct estimate of Y is already prepared in the seperate dataset "direct_glss7.dta" (see the previous chapter for the details). Now, we merge this data of direct estimate with the auxiliary variables.
-
-```{r merge, message = FALSE, warning = FALSE}
-direct_data <- read.dta13("https://github.com/pcorralrodas/wb_sae_training/raw/refs/heads/SummerU_2024/00.Data/direct_glss7.dta")
-
-# Combine input data
-combined_data <- combine_data(
-  pop_data = data_agg, pop_domains = "district",
-  smp_data = direct_data, smp_domains = "district"
-)
-```
 
 ### Variance smoothing
 
@@ -150,28 +87,87 @@ combined_data <- combined_data |>
 
 ### Model preparation
 
-FH does not run if there is any missing value in the dataset, and therefore, any variable with missing value should be removed in advance.
+FH does not run if there is any missing value in the auxiliary variables, and therefore, any variable with missing value should be removed in advance.
 
 ```{r fh_arcsin, message = FALSE, warning = FALSE}
-form <- as.formula(paste("dir_fgt0 ~",
-                         hhvars |> paste(collapse = " + ")))
+form <- poor ~ abs+ntl+aec+schyrs+mkt #+
+  #gen + age2+age3+age4+age5+educ1+educ2+    
+ #educ3+nat1+labor1+labor2+labor3
 
-rowsNAcovarites <- rowSums(sapply(combined_data[, all.vars(form)[-1]], is.na))
-combined_data <- combined_data[rowsNAcovarites == 0, ]
+rowsNAcovarites <- rowSums(sapply(comb_Data_poor[, all.vars(form)[-1]], is.na))
+comb_Data_poor <- comb_Data_poor[rowsNAcovarites == 0, ]
 ```
 
-### Check the perfect multicollinearity
+### Check multicollinearity
 
-With eblupFH, the model does not run if there is perfect multicollinearity between variables, so we need to omit them in advance. The function alias() checks the multicollinearity. According to the result, head_birthplace is causing the multicollinearity, and therefore, we omit "head_birthplace8".
+The model does not run if there is (perfect) multicollinearity between variables, so we need to omit them in advance. For that, we create the function stepCOL.
 
-```{r check_multicollinearity, message = FALSE, warning = FALSE}
-alias(form, data = combined_data)
-hhvars2 <- setdiff(hhvars, "head_birthplace8")
+```{r multicol, message = FALSE, warning = FALSE}
 
-cor_data <- cor(na.omit(combined_data[, hhvars]))
+stepCOL <- function(dt, xvars, y, cor_thresh = 0.95) {
+  
+#   library(data.table)
+ # library(MASS)        # For stepAIC
+ # library(caret)       # For findLinearCombos
+  
+  dt <- as.data.table(dt)
+  
+  # Drop columns that are entirely NA
+  dt <- dt[, which(unlist(lapply(dt, function(x) !all(is.na(x))))), with = FALSE]
+  
+  xvars <- xvars[xvars %in% colnames(dt)]
+  
+  # Keep only complete cases
+  dt <- na.omit(dt[, c(y, xvars), with = FALSE])
+  
+  
+  # Step 3: Drop highly correlated variables
+  xmat <- as.matrix(dt[, ..xvars])
+  cor_mat <- abs(cor(xmat))
+  diag(cor_mat) <- 0
+  while (any(cor_mat > cor_thresh, na.rm = TRUE)) {
+    cor_pairs <- which(cor_mat == max(cor_mat, na.rm = TRUE), arr.ind = TRUE)[1, ]
+    var1 <- colnames(cor_mat)[cor_pairs[1]]
+    var2 <- colnames(cor_mat)[cor_pairs[2]]
+    # Drop the variable with higher mean correlation
+    drop_var <- if (mean(cor_mat[var1, ]) > mean(cor_mat[var2, ])) var1 else var2
+    xvars <- setdiff(xvars, drop_var)
+    xmat <- as.matrix(dt[, ..xvars])
+    cor_mat <- abs(cor(xmat))
+    diag(cor_mat) <- 0
+  }
+  
+  # Step 2: Remove near-linear combinations
+ # xmat <- as.matrix(dt[, ..xvars])
+  combo_check <- tryCatch(findLinearCombos(xmat), error = function(e) NULL)
+  if (!is.null(combo_check) && length(combo_check$remove) > 0) {
+    xvars <- xvars[-combo_check$remove]
+    xmat <- as.matrix(dt[, ..xvars])
+  }
+  
+  # Step 1: Remove aliased (perfectly collinear) variables
+  model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
+  lm_model <- lm(model_formula, data = dt)
+  aliased <- is.na(coef(lm_model))
+  if (any(aliased)) {
+    xvars <- names(aliased)[!aliased & names(aliased) != "(Intercept)"]
+  }
+  return(xvars)
+}
 
-apply(cor_data, MARGIN = 2, FUN = function(x) which(abs(x) > 0.8))
+
 ```
+
+### Apply the function to remove the variables with high multicollinearity
+
+```{r remove_multicol, message = FALSE, warning = FALSE}
+xvars_initial <- colnames(comb_Data_poor[, all.vars(form)[-1]])
+xvars <- stepCOL(dt = comb_Data_poor, xvars = xvars_initial,
+                                y = "poor",
+                                cor_thresh = 0.95)
+print(xvars)
+```
+
 
 ### Model creation and variable selection
 
@@ -186,50 +182,6 @@ fh_start <- step(fh(
   vardir = "vardir", combined_data = comb_Data_poor, domains = "prov",
   method = "ml", transformation = "arcsin", backtransformation = "bc",
   eff_smpsize = "n_eff", MSE = FALSE)) 
-```
-
-### Function to remove the variables with high VIF
-
-Next, we omit the variables with strong multicolliearity. For that, we create the function stepwise_vif.
-
-```{r vif_function, message = FALSE, warning = FALSE}
-colnames(combined_data)
-combined_data[, hhvars]
-
-
-
-stepwise_vif <- function(data, predictors, weight, threshold) {
-  
-  # Select predictor variables 
-  dir_fgt0 <- data3$dir_fgt0
-  x_data <- data3[, hhvars2]
-  formula <- as.formula(paste("dir_fgt0 ~", paste(hhvars2, collapse = "+")))
-  # Function to calculate VIF for a set of predictors
-  vif_values <- vif(lm(formula, weights = rep(1,nrow(data3)), data = x_data))
-  
-  # Stepwise elimination
-  while (max(vif_values, na.rm = TRUE) > threshold) {
-    # Find the variable with the highest VIF
-    max_vif_var <- names(which.max(vif_values))
-    
-    # Remove that variable from the dataset
-    predictors <- setdiff(predictors, max_vif_var)
-    x_data <- data3[, predictors]
-    
-    # Recalculate VIF with the updated variable set
-    formula <- as.formula(paste("dir_fgt0 ~", paste(predictors, collapse = "+")))
-    vif_values <- vif(lm(formula, weights = rep(1,nrow(data3)), data = x_data))
-  }
-  
-  return(predictors)  # Return the final set of predictors with VIF ≤ threshold
-}
-```
-
-### Apply the function to remove the variables with high multicollinearity
-
-```{r remove_vif, message = FALSE, warning = FALSE}
-hhvars3 <- stepwise_vif(data3, hhvars2, weight = rep(1,nrow(data3)), threshold = 5)
-print(hhvars3)
 ```
 
 ## Model estimation of FH point and their MSE estimates.
@@ -263,7 +215,7 @@ if (fh_arcsin$model$variance == 0){
 summary(fh_arcsin$ind$FH)
 
 # Summary statistics of MSE estimates
-summary(fh_arcsin$ind$FH)
+summary(fh_arcsin$MSE$FH)
 ```
 
 ## Assessment of the estimated model.
