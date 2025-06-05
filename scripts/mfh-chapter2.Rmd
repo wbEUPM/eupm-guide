@@ -1,0 +1,746 @@
+---
+title: "Multivariate Fay Herriot Modelling"
+author: "Ifeanyi Edochie"
+date: "2025-06-04"
+output: html_document
+---
+# Stable FH Estimators over T time periods: The Multivariate Fay Herriot Modelling Approach
+
+This section describes procedures that yield stable small area estimators for each of $D$ areas over $T$ subsequent time instants. Area populations, the samples and the data might change between time periods. Accordingly, we denote $U_t$ the overall population at time $t$, which is partitioned into $D$ areas $U_{1t}, ... ,U_{Dt}$, of respective population sizes $N_{1t}$
+
+An overview of the MFH model estimation process is as follows:
+
+-   Step 1: Compute the selected direct area estimators for each target area $d = 1, ..., D$ for each time $t = 1, ..., T$ and estimators of their corresponding sampling variances and covariances.
+
+-   Step 2: Prepare variables (from household survey, administrative data or other sources) at the level of the target area for each time instant in the MFH model. We present a simple approach which performs model selection in a pooled linear regression model without time effects.
+
+-   Step 3: Fit the MFH models to test for homoskedastic area-time effects $({\mu_d}_1, ... , {\mu_d}_T)$ are homoskedastic or not. If we reject the homoskedasticity of variances, implement the MFH3 model. Otherwise, we proceed with the MFH2 model.
+
+-   Step 4: Check the selected model assumptions, including linearity, normality of predicted area effects and standardized model residuals, and the presence of the outlying areas.
+
+-   Step 5: In case of systematic model departures such as isolated departures because of outlying areas, some adjustments might need to be implemented before returning to Step 2 to recompute the MFH model.
+
+-   Step 6: If model assumptions hold, using the above direct estimates and estimated sampling variances and covariances, and the selected auxiliary variables, compute MFH estimators $\hat{\delta}_{dt}^{MFH},\quad d = 1,...,D$ and $t = 1, ..., T$ and their corresponding estimated MSEs.
+
+We will show below the use of the `eblupMFH2()` and `eblupMFH3()` from the R package msae [@permatasari2022package] compute the EBLUPs and their MSE estimates under the MFH models 2 and 3, respectively. The calls to these functions are:
+
+`eblupMFH2(formula, vardir, MAXITER = 100, PRECISION = 1e-04, data)`
+
+`eblupMFH3(formula, vardir, MAXITER = 100, PRECISION = 1e-04, data)`
+
+## MFH Estimation of Poverty Rates for T time periods
+In this example, we use a synthetic data set adapted from R package `sae` called `incomedata`. The original data contains information for $n = 17,119$ fictitious individuals residing across $D = 52$ Spanish provinces. The variables include the name of the province of residence (`provlab`), province code (`prov`), as well as several correlates of income. We have added two additional income vectors corresponding to two additional years of data. 
+
+We will show how to estimate a poverty map for each year by using the Multivariate Fay Herriot modelling approach. This approach allows us to take advantage of the temporal correlation between poverty rates i.e. an individuals income in year $t$ is likely correlated with their income in year $t+1$. 
+
+The rest of this tutorial shows how to prepare MFH models using a random 10% sample of the `incomedata` to estimate the poverty rates. 
+
+```{r load-data, message = FALSE, warning = FALSE}
+
+if (sum(installed.packages()[,1] %in% "pacman") != 1){
+  
+  install.packages("pacman")
+  
+}
+
+pacman::p_load(sf, data.table, tidyverse, car, msae, 
+               sae, survey, spdep, knitr, MASS, caret)
+
+income_dt <- readRDS(here::here("data/incomedata_sample.RDS"))
+
+glimpse(income_dt)
+
+
+```
+
+
+### Step 1: Direct Estimation
+We will use the direct HT estimators that use the survey weights in `weight` variable. First, we calculate the total sample size, the number of provinces, the sample sizes for each province and extract the population sizes for each province/target area from the `sizeprov` file. For those using the household/individual level survey data, this may be obtained from the sum of the household or individual weights as appropriate.
+
+```{r}
+
+data(sizeprov)
+
+## quickly compute sample size for each province
+sampsize_dt <- 
+income_dt |>
+  group_by(prov) |>
+  summarize(N = n())
+
+## the poverty line for each is already included within the data. 
+## Lets compute the direct estimates for each year of data and create a list of data.frames (equal in length to the number of years) 
+## containing the direct estimate, the standard errors and the coefficient of variation. 
+
+direct_list <- 
+  mapply(FUN = function(y, threshold){
+    
+     z <- emdi::direct(y = y,
+                       smp_data = income_dt %>% as.data.table(),
+                       smp_domains = "prov",
+                       weights = "weight",
+                       threshold = unique(income_dt[[threshold]]),
+                       var = TRUE)
+     
+     z <- 
+       z$ind |>
+       dplyr::select(Domain, Head_Count) |>
+       rename(Direct = "Head_Count") |>
+       merge(z$MSE |>
+               dplyr::select(Domain, Head_Count) |>
+               rename(MSE = "Head_Count"),
+             by = "Domain") |>
+       mutate(SD = sqrt(MSE)) |>
+       mutate(CV = SD / Direct) |>
+       merge(sampsize_dt |> 
+               mutate(prov = as.factor(prov)), 
+             by.x = "Domain", 
+             by.y = "prov")
+       
+      
+     return(z)
+
+  }, SIMPLIFY = FALSE,
+  y = c("income2012", "income2013", "income2014"),
+  threshold = c("povline2012", "povline2013", "povline2014"))
+
+
+direct_list %>%
+  lapply(X = .,
+         FUN = function(x){
+           
+           y <- head(x)
+           
+           y %>% kable()
+           
+         })
+
+```
+
+#### Estimating the Variance-Covariance Matrix of the Sampling Error Distribution
+Next, we quickly estimate the sample variance and covariance for the direct estimator using the survey R package as follows:
+
+```{r}
+
+## quickly creating the poverty indicator
+income_dt <- 
+  income_dt |>
+  mutate(poor2012 = ifelse(income2012 < povline2012, 1, 0),
+         poor2013 = ifelse(income2013 < povline2013, 1, 0),
+         poor2014 = ifelse(income2014 < povline2014, 1, 0))
+
+
+### creating a survey object
+design_obj <- svydesign(ids = ~1, ###replace this argument with the PSU, cluster or enumeration area variable as the case maybe if available 
+                        weights = ~weight, ### survey weights
+                        data = income_dt)
+
+var_dt <- svymean(~poor2012 + poor2013 + poor2014, design_obj)
+
+var_dt <- vcov(var_dt)
+
+var_dt <- as.numeric(c(diag(var_dt), var_dt[lower.tri(var_dt, diag = FALSE)]))
+
+names(var_dt) <- c("v1", "v2", "v3", "v12", "v13", "v23")
+
+### here is what the result should look like 
+
+var_dt
+
+```
+
+#### Handling Low Sample Size: Variance Smoothing
+A quick inspection of the preceding results will show some provinces contain low sample sizes which sometimes result in extreme value poverty rates and hence 0 variance. To avoid this, we will show you how to apply the variance smoothing method suggested by [@you2023application]. Please see the code and Roxygen comments below explaining the use of the `varsmoothie_king()` function which computes smoothed variances. 
+
+```{r}
+
+#' A function to perform variance smoothing
+#' 
+#' The variance smoothing function applies the methodology of (Hiridoglou and You, 2023)
+#' which uses simply log linear regression to estimate direct variances for sample 
+#' poverty rates which is useful for replacing poverty rates in areas with low sampling
+#' 
+#' @param domain a vector of unique domain/target areas
+#' @param direct_var the raw variances estimated from sample data e=
+#' @param sampsize the sample size for each domain
+#' @param y indicator variable at the survey sample level for each household/individual/unit i.e. poor = 1, non-poor = 0
+#' 
+#' @export
+
+varsmoothie_king <- function(domain,
+                             direct_var,
+                             sampsize,
+                             y){
+
+  dt <- data.table(Domain = domain,
+                   var = direct_var,
+                   n = sampsize)
+
+  dt$log_n <- log(dt$n)
+  dt$log_var <- log(dt$var)
+
+  lm_model <- lm(formula = log_var ~ log_n,
+                 data = dt[!(abs(dt$log_var) == Inf),])
+
+  dt$pred_var <- predict(lm_model, newdata = dt)
+
+  dt$var_smooth <- exp(dt$pred_var) * exp(var(y, na.rm = TRUE)/2)
+
+  return(dt[, c("Domain", "var_smooth"), with = F])
+
+}
+
+
+```
+
+OK, the goal now is to use the above `varsmoothie_king()` function to add an additional column of smoothed variances into our `direct_list` object. 
+
+```{r}
+
+
+direct_list <- 
+direct_list %>%
+  mapply(x = .,
+         y = list("poor2012", "poor2013", "poor2014"),
+         FUN = function(x, y){
+           
+           z <- varsmoothie_king(domain = x[["Domain"]],
+                                 direct_var = x[["MSE"]],
+                                 sampsize = x[["N"]],
+                                 y = income_dt[[y]])
+           
+           z <- x %>% merge(z, by = "Domain")
+           
+           return(z)
+           
+         }, 
+         SIMPLIFY = FALSE)
+
+```
+
+* Now, you can replace the zero/near zero sample size area MSEs with their smoothed variances. 
+
+
+
+### Step 2: Variable Preparation and Model Selection 
+
+#### Variable Preparation
+We have now shown how to compute direct estimates of poverty. In addition, we compute the variances for the direct estimates. This will allow us to compare the value of small area estimation with the multivariate Fay Herriot Model. The large direct variances point to the imprecision in estimating poverty estimates from the survey. MFH modelling should improve model precision particularly in the areas with very little sampling. With the direct estimation above, we are able to compare the statistical gains/improvements from performing MFH modelling. 
+
+Now, let us begin by preparing the set of variables for MFH estimation. First, we will create more variable interactions. We have developed a function `create_interactions()`. See documentation with the Roxygen comments in the following chunk: 
+
+
+```{r}
+
+#' Create Interaction Terms Between a Variable and a List of Other Variables
+#'
+#' This function generates interaction terms between a specified variable (`interacter_var`) 
+#' and a list of other variables (`var_list`) in a given dataset. The resulting interaction 
+#' terms are returned in a new data frame.
+#'
+#' @param dt A `data.frame` or `data.table` containing the data.
+#' @param interacter_var A string specifying the name of the variable to interact with each variable in `var_list`.
+#' @param var_list A character vector of variable names in `dt` to be interacted with `interacter_var`.
+#'
+#' @return A `data.frame` containing the interaction terms. Each column is named using the pattern `var_X_interacter_var`.
+#'
+#' @examples
+#' \dontrun{
+#' dt <- data.frame(a = 1:5, b = 6:10, c = 11:15)
+#' create_interactions(dt, interacter_var = "a", var_list = c("b", "c"))
+#' }
+#'
+#' @export
+
+
+create_interactions <- function(dt, interacter_var, var_list) {
+  # Ensure dt is a data.table
+  if (!"data.frame" %in% class(dt)) {
+    dt <- as.data.table(dt)
+  }
+  
+  # Check if interacter_var exists in the dataset
+  if (!(interacter_var %in% names(dt))) {
+    stop(paste(interacter_var, "not found in dataset"))
+  }
+  
+  # Check if var_list contains valid variables that exist in the dataset
+  if (any(!var_list %in% names(dt))) {
+    stop("Some variables in var_list are not found in the dataset.")
+  }
+  
+  # Create an empty data.table to store interactions
+  int_dt <- data.frame(matrix(nrow = nrow(dt)))
+  
+  # Loop over var_list to create interaction terms
+  for (var in var_list) {
+    interaction_name <- paste0(var, "_X_", interacter_var)
+    int_dt[[interaction_name]] <- dt[[var]] * dt[[interacter_var]]
+  }
+  
+  int_dt <- int_dt[, -1]
+  
+  return(int_dt)
+}
+
+### applying the create_interactions() functions
+income_dt <- 
+  income_dt %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "gen",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "educ1", "educ2", "educ3", "nat1",
+                                         "labor1", "labor2", "labor3"))) %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "educ3",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "nat1", "labor1", "labor2", "labor3"))) 
+
+
+```
+
+
+More (and probably better correlates of income and poverty) can be created to improve the predictive power of the model. The next step is to take target level variables. The MFH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns: 
+
+* (1) Variables for poverty rates for each time period
+
+* (2) The set of candidate variables from which the most predicted of poverty rates will be selected
+
+* (3) The target area variable identifier (i.e. in this case the province variable `prov` and `provlab`)
+
+We prepare this dataset as follows: 
+
+```{r}
+
+## create the candidate variables
+candidate_vars <- colnames(income_dt)[!colnames(income_dt) %in% 
+                                         c("provlab", "prov", "income",
+                                           "weight", "povline", "y",
+                                           "poverty", "y0", "y1", "y2",
+                                           "p0_prov", "p1_prov", "p2_prov",
+                                           "ac", "nat", "educ", "labor",
+                                           "age")]
+
+candidate_vars <- candidate_vars[!grepl("sampsize|prov|poverty|income|povline|^v[0-9]|^y[0-9]", 
+                                        candidate_vars)]
+
+### computing the province level data
+prov_dt <- 
+income_dt |>
+  group_by(prov, provlab) |>
+  summarize(
+    across(
+      any_of(candidate_vars),
+      ~ weighted.mean(x = ., w = weight, na.rm = TRUE),
+      .names = "{.col}"
+    )
+  ) 
+
+```
+
+
+#### Model Selection
+
+Next, we apply a simple variable selection process which employs the stepwise regression algorithm using the AIC selection criteria as in described by [@yamashita2007stepwise]. The function `stepAIC_wrapper()` implemented below is a wrapper to the `stepAIC()` function carries all the perfunctory cleaning necessary use the `stepAIC()` function. This includes dropping columns that are entirely missing (`NA`) and keep only complete cases/observations and remove perfectly or near collinear variables and combinations using the variance inflation method.   
+
+```{r}
+
+#' A function to perform stepwise variable selection with AIC selection criteria
+#' 
+#' @param dt data.frame, dataset containing the set of outcome and independent variables
+#' @param xvars character vector, the set of x variables
+#' @param y chr, the name of the y variable
+#' @param vif_threshold integer, a variance inflation factor threshold
+#' 
+#' @import data.table
+#' @importFrom cars vif
+#' @importFrom MASS stepAIC
+
+stepAIC_wrapper <- function(dt, xvars, y, cor_thresh = 0.95) {
+  
+  dt <- as.data.table(dt)
+  
+  # Drop columns that are entirely NA
+  dt <- dt[, which(unlist(lapply(dt, function(x) !all(is.na(x))))), with = FALSE]
+  
+  xvars <- xvars[xvars %in% colnames(dt)]
+  
+  # Keep only complete cases
+  dt <- na.omit(dt[, c(y, xvars), with = FALSE])
+  
+  # Step 1: Remove aliased (perfectly collinear) variables
+  model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
+  lm_model <- lm(model_formula, data = dt)
+  aliased <- is.na(coef(lm_model))
+  if (any(aliased)) {
+    xvars <- names(aliased)[!aliased & names(aliased) != "(Intercept)"]
+  }
+  
+  # Step 2: Remove near-linear combinations
+  xmat <- as.matrix(dt[, ..xvars])
+  combo_check <- tryCatch(findLinearCombos(xmat), error = function(e) NULL)
+  if (!is.null(combo_check) && length(combo_check$remove) > 0) {
+    xvars <- xvars[-combo_check$remove]
+    xmat <- as.matrix(dt[, ..xvars])
+  }
+  
+  # Step 3: Drop highly correlated variables
+  cor_mat <- abs(cor(xmat))
+  diag(cor_mat) <- 0
+  while (any(cor_mat > cor_thresh, na.rm = TRUE)) {
+    cor_pairs <- which(cor_mat == max(cor_mat, na.rm = TRUE), arr.ind = TRUE)[1, ]
+    var1 <- colnames(cor_mat)[cor_pairs[1]]
+    var2 <- colnames(cor_mat)[cor_pairs[2]]
+    # Drop the variable with higher mean correlation
+    drop_var <- if (mean(cor_mat[var1, ]) > mean(cor_mat[var2, ])) var1 else var2
+    xvars <- setdiff(xvars, drop_var)
+    xmat <- as.matrix(dt[, ..xvars])
+    cor_mat <- abs(cor(xmat))
+    diag(cor_mat) <- 0
+  }
+  
+  # Step 4: Warn if still ill-conditioned
+  cond_number <- kappa(xmat, exact = TRUE)
+  if (cond_number > 1e10) {
+    warning("Design matrix is ill-conditioned (condition number > 1e10). Consider reviewing variable selection.")
+  }
+  
+  # Final model fit
+  model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
+  full_model <- lm(model_formula, data = dt)
+  
+  # Stepwise selection
+  stepwise_model <- stepAIC(full_model, direction = "both", trace = 0)
+  
+  return(stepwise_model)
+  
+}
+
+
+```
+
+
+We apply the variable selection process for the selection of each time period model. See the application below: 
+
+```{r, warning = FALSE, message = FALSE}
+
+### the set of outcome variables
+outcome_list <- c("poor2012", "poor2013", "poor2014")
+
+candidate_vars <- candidate_vars[!candidate_vars %in% outcome_list] 
+
+### applying variable selection to each out variable
+stepaicmodel_list <- 
+  mapply(x = outcome_list,
+         FUN = function(x){
+           
+           y <- stepAIC_wrapper(dt = prov_dt,
+                                xvars = candidate_vars,
+                                y = x,
+                                cor_thresh = 0.8)
+           
+           coef_list <- y[["coefficients"]]
+           
+           coef_list <- names(coef_list)[!names(coef_list) %in% "(Intercept)"]
+           
+           return(coef_list)
+           
+         },
+         SIMPLIFY = FALSE)
+
+### now lets create a list of equations
+### create the formulas
+
+mfh_formula <-
+  mapply(x = outcome_list,
+         y = stepaicmodel_list,
+         FUN = function(x, y){
+           
+           formula <- as.formula(paste0(x, " ~ ", paste(y, collapse = " + "))) 
+           
+           return(formula)
+           
+         }, SIMPLIFY = FALSE)
+
+mfh_formula
+
+```
+
+
+Let's run some linear regressions for set of selected variables to get a sense for the predicted power of the models independently
+
+```{r}
+
+lmcheck_obj <- 
+lapply(X = mfh_formula,
+       FUN = lm,
+       data = prov_dt)
+
+
+lapply(X = lmcheck_obj,
+       FUN = summary)
+
+
+
+```
+
+
+### Step 3: Model Estimations
+
+Next, we show how to use the `msae` R package to estimate the Empirical Best Linear Unbiased Predictor (EBLUP) for the poverty map using the `eblupMFH2()` and `eblupMFH3()` functions which allow for time series fay herriot estimation under homoskedastic and heteroskedastic assumptions. We show appropriate tests for deciding whether random effects variance and covariance matrix exhibit homoskedastic or heteroskedastic. For completeness, we also briefly perform the previous described direct estimation in step 1, using the `eblupUFH()` function as well as the `eblupMFH1()` for the fay herriot model. This allows us to show the benefit of MFH estimation over the simple direct estimation as well as the time invariant Fay Herriot Model. 
+
+```{r}
+
+### first lets add the sampling variance and covariance matrix to the prov_dt dataset
+
+prov_dt <- 
+prov_dt |>
+  mutate(!!!as.list(var_dt))
+
+#### now we estimate all 4 models including the multivariate fay herriot models
+
+model0_obj <- eblupUFH(mfh_formula, vardir = names(var_dt), data = prov_dt)
+model1_obj <- eblupMFH1(mfh_formula, vardir = names(var_dt), data = prov_dt)
+model2_obj <- eblupMFH2(mfh_formula, vardir = names(var_dt), data = prov_dt)
+model3_obj <- eblupMFH3(mfh_formula, vardir = names(var_dt), data = prov_dt)
+
+```
+
+With the MFH3 estimation, we can check if the variance-covariance matrix structure points to heteroskedastic random effects. We do so as follows: 
+
+```{r}
+
+model3_obj$fit$refvarTest
+
+```
+
+This tests the null hypothesis that the variances $\sigma_t^2$ at each pair of time instants $t$ and $s$ are equal against the alternative that they are not. In this case, at significance level of 0.05, we reject the equality of variances between $t = 2013$ and $t = 2014$. Hence we can use the MFH3 model (`eblupMFH3()` function). If these tests supported the equality of variances, then we would use instead the function `eblupMFH2` for estimation. 
+
+### Step 4: Post Estimation Diagnostics: Model Assumption Checks for Linearity, Normality and Outliers
+
+We now verify the assumptions of the MFH3 model. This includes assessing linearity, the normality of the predicted area effects and standardized residuals, as well as checking for the presence of outlying areas. 
+
+#### The Check for Linearity
+
+We first check the linearity assumption. This can be addressed by regressing the model residuals against the predicted values (EBLUPs). 
+
+```{r}
+
+resids_3 <- cbind(prov_dt$poor2012 - model3_obj$eblup$poor2012,
+                  prov_dt$poor2013 - model3_obj$eblup$poor2013,
+                  prov_dt$poor2014 - model3_obj$eblup$poor2014)
+
+layout(matrix(1:3, nrow = 1, byrow = TRUE))
+
+plot(model3_obj$eblup$poor2012, resids_3[,1], pch = 19, xlab = "EBLUPs t = 1", ylab = "Residuals t = 1")
+plot(model3_obj$eblup$poor2013, resids_3[,2], pch = 19, xlab = "EBLUPs t = 2", ylab = "Residuals t = 2")
+plot(model3_obj$eblup$poor2014, resids_3[,3], pch = 19, xlab = "EBLUPs t = 3", ylab = "Residuals t = 3")
+
+```
+
+
+
+```{r}
+
+fits_3 <- model3_obj$eblup  # EBLUPs (predicted values)
+
+# Run regression of residuals on fitted values for each time period
+lm_resid_fit_t1 <- lm(resids_3[,1] ~ model3_obj$eblup$poor2012)
+lm_resid_fit_t2 <- lm(resids_3[,2] ~ model3_obj$eblup$poor2013)
+lm_resid_fit_t3 <- lm(resids_3[,3] ~ model3_obj$eblup$poor2014)
+
+# View summaries
+summary(lm_resid_fit_t1)
+summary(lm_resid_fit_t2)
+summary(lm_resid_fit_t3)
+
+```
+
+
+### Evaluating the Normality Assumption
+
+#### The Shapiro Wilks Test
+We use the shapiro wilks test of normality using the `shapiro.test()` function in base R. The Shapiro-Wilk test assesses whether a sample of data is drawn from a normally distributed population. It does so by comparing the order statistics (i.e., sorted values) of the sample to the expected values under a normal distribution. Specifically, the test statistic $W$ is a ratio of the squared correlation between the observed sample quantiles and the corresponding normal quantiles. 
+
+First, we perform the shapiro wilks normality test on the model errors, $\varepsilon$. We show both the normality distribution histogram as well as the qqplots as below: 
+
+```{r}
+
+### evaluating the normality assumption
+resid_dt <- prov_dt[,c("poor2012", "poor2013", "poor2014")] - model3_obj$eblup
+
+### perform the shapiro test
+
+shapiro_obj <- apply(resid_dt, 2, shapiro.test)
+
+summary_dt <- 
+  data.frame(Time = names(shapiro_obj),
+             W = lapply(X = shapiro_obj,
+                        FUN = function(x){
+                          
+                          return(x$statistic[[1]])
+                          
+                        }) %>%
+               as.numeric(),
+             p_value = lapply(X = shapiro_obj,
+                              FUN = function(x){
+                                
+                                return(x$p.value)
+                                
+                              }) %>%
+               as.numeric())
+
+### plot the results
+summary_dt <- 
+  summary_dt %>%
+  mutate(label = paste0("W = ", round(W, 3), "\n", "p = ", signif(p_value, 3)))
+
+resid_dt %>%
+  pivot_longer(cols = everything(), 
+               names_to = "Time", 
+               values_to = "Residual") %>%
+  ggplot(aes(x = Residual)) + 
+  geom_histogram(bins = 10, fill = "steelblue", color = "white") + 
+  geom_text(data = summary_dt, aes(x = -Inf, y = Inf, label = label),
+            hjust = -0.1, vjust = 1.2, inherit.aes = FALSE, size = 3.5) +
+  facet_wrap(~Time, scales = "free") + 
+  theme_minimal() + 
+  labs(title = "Residual Histograms by Time Period")
+
+
+### here's how to create qqplots
+resid_dt %>%
+  pivot_longer(cols = everything(),
+               names_to = "Time",
+               values_to = "Residual") %>%
+  ggplot(aes(sample = Residual)) +
+  stat_qq() +
+  stat_qq_line() +
+  facet_wrap(~Time, scales = "free") +
+  theme_minimal() +
+  labs(title = "QQ Plots of Residuals by Time Period")
+
+```
+
+Likewise, we test the normality of the random effect variable
+
+```{r}
+
+
+#### For the random effects
+raneff_dt <- as.data.frame(model3_obj$randomEffect)
+
+### lets run the shapiro wilks tests again
+shapiro_obj <- apply(raneff_dt, 2, shapiro.test)
+
+
+summary_dt <- 
+  data.frame(Time = names(shapiro_obj),
+             W = lapply(X = shapiro_obj,
+                        FUN = function(x){
+                          
+                          return(x$statistic[[1]])
+                          
+                        }) %>%
+               as.numeric(),
+             p_value = lapply(X = shapiro_obj,
+                              FUN = function(x){
+                                
+                                return(x$p.value)
+                                
+                              }) %>%
+               as.numeric())
+
+### plot the results
+summary_dt <- 
+  summary_dt %>%
+  mutate(label = paste0("W = ", round(W, 3), "\n", "p = ", signif(p_value, 3)))
+
+raneff_dt %>%
+  pivot_longer(cols = everything(), 
+               names_to = "Time", 
+               values_to = "RandEff") %>%
+  ggplot(aes(x = RandEff)) + 
+  geom_histogram(bins = 10, fill = "darkorange", color = "white") + 
+  geom_text(data = summary_dt, aes(x = -Inf, y = Inf, label = label),
+            hjust = -0.1, vjust = 1.2, inherit.aes = FALSE, size = 3.5) +
+  facet_wrap(~Time, scales = "free") + 
+  theme_minimal() + 
+  labs(title = "Randon Effects Histograms by Time Period")
+
+
+```
+
+
+In both cases, we compare the p-value to the 0.05 level of significance. The results suggest we cannot reject the null hypothesis of normally distributed model errors and random effects. 
+
+In some cases, the assumptions described by the MFH3 model are not. Steps 5 and 6 recommend re-estimate the models by creating additional variables via transformation or variable interactions. 
+
+
+### Comparing Direct Estimation to Multivariate Model Outputs
+
+```{r}
+
+#### first let us compare the gains in precision
+
+direct_list <- 
+  mapply(x = direct_list,
+         y = c(2012, 2013, 2014),
+         FUN = function(x, y){
+           
+           x$year <- y
+           
+           return(x)
+           
+         }, SIMPLIFY = FALSE)
+
+direct_dt <- Reduce("rbind", direct_list)
+
+
+model3mse_dt <- 
+  model3_obj$MSE |>
+  mutate(Domain = 1:n()) |>
+  pivot_longer(
+    cols = starts_with("poor"),         # columns to pivot
+    names_to = "year",                  # new column for the years
+    values_to = "modelMSE"
+  ) |>
+  mutate(year = as.integer(substr(year, 5, 8)))
+
+model3pov_dt <- 
+  model3_obj$eblup |>
+  mutate(Domain = 1:n()) |>
+  pivot_longer(
+    cols = starts_with("poor"),         # columns to pivot
+    names_to = "year",                  # new column for the years
+    values_to = "modelpov"
+  ) |>
+  mutate(year = as.integer(substr(year, 5, 8)))
+
+model3pov_dt <- merge(model3mse_dt, model3pov_dt, by = c("Domain", "year"))
+
+
+model3pov_dt <- 
+  model3pov_dt |>
+  mutate(modelCV = sqrt(modelMSE) / modelpov)
+
+
+cv_dt <- merge(model3pov_dt, direct_dt, by = c("Domain", "year"))
+
+cv_dt |>
+  dplyr::select(Domain, year, CV, modelCV) |>
+  pivot_longer(cols = c(CV, modelCV), names_to = "Type", values_to = "CV_value") |>
+  ggplot(aes(x = factor(year), y = CV_value, color = Type, group = Type)) +
+  geom_line(size = 1) +
+  facet_wrap(~ Domain, scales = "free_y") +
+  labs(title = "Comparison of Direct vs Model-based CVs",
+       y = "Coefficient of Variation (CV)",
+       x = "Year",
+       color = "Estimation Type") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+```
+

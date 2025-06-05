@@ -17,7 +17,20 @@ pacman::p_load(sf, data.table, tidyverse, car, msae, sae, survey, spdep)
 
 income_dt <- readRDS("data/incomedata.RDS")
 
+### sample 10% of the population
+set.seed(123)
+
+income_dt <- 
+  income_dt |>
+  group_by(provlab) |>
+  sample_frac(size = 0.1) |>
+  mutate(weight = weight * 10)
+
+saveRDS(income_dt, "data/incomedata_sample.RDS")
+
 shp_dt <- readRDS("data/shapes/spainshape.RDS")
+
+source("scripts/Function_pbmcpeMFH3.R")
 
 
 ##### let us start by developing the typical MFH model 
@@ -412,15 +425,32 @@ mfh_formula <-
          }, SIMPLIFY = FALSE)
 
 
+### check the model correlations
+lapply(X = mfh_formula,
+       FUN = function(x){
+         
+         y <- lm(x, data = prov_dt)
+         
+         return(summary(y))
+         
+       })
+
 
 ### now lets estimate all 4 models
 
 model0_obj <- eblupUFH(mfh_formula, vardir = names(var_dt), data = prov_dt)
 model1_obj <- eblupMFH1(mfh_formula, vardir = names(var_dt), data = prov_dt)
 model2_obj <- eblupMFH2(mfh_formula, vardir = names(var_dt), data = prov_dt, MAXITER = 10000)
-model3_obj <- eblupMFH3(mfh_formula, vardir = names(var_dt), data = prov_dt, MAXITER = 1e7, PRECISION = 1e-3)
+model3_obj <- eblupMFH3(mfh_formula, vardir = names(var_dt), data = prov_dt)
+# 
+# saveRDS(model3_obj, "data/modelmfh3.RDS")
 
-saveRDS(model3_obj, "data/modelmfh3.RDS")
+### use Function_pbmcpeMFH3 to obtain estimates of mean cross product errors for the 3 time instants
+# pbmcpeMFH3(formula = mfh_formula,
+#            vardir = names(var_dt),
+#            nB = 5,
+#            data = prov_dt)
+
 
 
 ### lets check the normality of the random effects
