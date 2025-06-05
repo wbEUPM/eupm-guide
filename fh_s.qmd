@@ -57,9 +57,25 @@ summary(comb_Data_poor)
 ### Variance smoothing
 
 ```{r variance_smoothing, message = FALSE, warning = FALSE}
-combined_data <- combined_data |>
+# Reference: Morales: A Course on SAE, 16.4 Sampling Error Variances
+comb_Data_poor_in <- comb_Data_poor[complete.cases(comb_Data_poor$poor),]
+var_smooth_model <- lm(log(vardir) ~ n + poor, data = comb_Data_poor_in)
+summary(var_smooth_model)
+
+residual_var <-  summary(var_smooth_model)$sigma^2
+comb_Data_poor_in$var_smooth <- exp(predict(var_smooth_model)) * exp(residual_var / 2)
+comb_Data_poor_in$se_smooth <- sqrt(comb_Data_poor_in$var_smooth)
+comb_Data_poor_in$cv_smooth <- comb_Data_poor_in$se_smooth/ comb_Data_poor_in$poor
+
+# Reference: adaption of You and Hidiroglou (2012) as shown in Hidiroglou, 
+# Beaumont, and Yung (2019)
+
+# all districts where the variance could not be estimated because only 1 enumeration area was sampled and because the district’s direct estimate is equal to 0 or 1 are not used for the modelling. Consequently, their small area estimate is composed entirely of their synthetic estimator. 
+#For all others, either the district’s sampling variance is used and in cases where the sampling variance is not available smoothed variance is used.
+
+comb_Data_poor <- comb_Data_poor |>
   mutate(
-    log_s2 = log(dir_fgt0_var),
+    log_s2 = log(vardir),
     logN = log(N),
     logN2 = logN^2,
     logpop = log(pop),
