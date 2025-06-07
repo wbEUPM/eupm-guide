@@ -66,87 +66,104 @@ glimpse(income_dt)
 ### Direct estimation
 We will use the direct HT estimators that use the survey weights in `weight` variable. First, we calculate the total sample size, the number of provinces, the sample sizes for each province and extract the population sizes for each province/target area from the `sizeprov` file. For those using the household/individual level survey data, this may be obtained from the sum of the household or individual weights as appropriate.
 
-```{rl direct, message = FALSE, warning = FALSE}
+```{r direct, message = FALSE, warning = FALSE}
+## The poverty line for each is already included within the data. 
+## Lets compute the direct estimates for each year of data and create a  data.frame containing the direct estimate, the standard errors, the variances, the coefficient of variation and the design effects, that are needed for arcsin transformation. We use
+## the direct function of the emdi package here. Other options are e.g. the direct function of package sae or the svyby command of package survey.
 
 data(sizeprov)
 
 ## quickly compute sample size for each province
 sampsize_dt <- 
 income_dt |>
-  group_by(prov) |>
+  group_by(provlab) |>
   summarize(N = n())
 
-## The poverty line for each is already included within the data. 
-## Lets compute the direct estimates for each year of data and create a  data.frame containing the direct estimate, the standard errors, the variances and the coefficient of variation. 
+direct_dt <- emdi::direct(y = "income2012",
+                       smp_data = income_dt %>% as.data.table(),
+                       smp_domains = "provlab",
+                       weights = "weight",
+                       threshold = unique(income_dt$povline2012),
+                       var = TRUE)
 
-z <- emdi::direct(y = "income2012",
-             smp_data = income_dt %>% as.data.table(),
-             smp_domains = "prov",
-             weights = "weight",
-             threshold = unique(income_dt$povline2012),
-             var = TRUE)
-     
-     z <- 
-       z$ind |>
+direct_dt <- 
+       direct_dt$ind |>
        dplyr::select(Domain, Head_Count) |>
        rename(Direct = "Head_Count") |>
-       merge(z$MSE |>
+       merge(direct_dt$MSE |>
                dplyr::select(Domain, Head_Count) |>
-               rename(MSE = "Head_Count"),
+               rename(vardir = "Head_Count"),
              by = "Domain") |>
-       mutate(SD = sqrt(MSE)) |>
+       mutate(SD = sqrt(vardir)) |>
        mutate(CV = SD / Direct) |>
        merge(sampsize_dt |> 
-               mutate(prov = as.factor(prov)), 
+               mutate(provlab = as.factor(provlab)), 
              by.x = "Domain", 
-             by.y = "prov")
-    
+             by.y = "provlab")
+## The design effect is the ratio of the variance considering the sampling design to the variance estimated under
+## simple random sampling.
+direct_dt$var_SRS <- direct_dt$Direct * (1 - direct_dt$Direct) / direct_dt$N
+direct_dt$deff <- direct_dt$vardir / direct_dt$var_SRS
+summary(direct_dt$n)    
 ```
 
 ### Variance smoothing
-A quick inspection of the preceding results will show some provinces contain low sample sizes which sometimes result in extreme value poverty rates and hence 0 variance. To avoid this, we will show you how to apply the variance smoothing method suggested by [@you2023application]. Please see the code and Roxygen comments below explaining the use of the `varsmoothie_king()` function which computes smoothed variances. 
+A quick inspection of the preceding results will show some provinces contain low sample sizes which sometimes result in extreme value poverty rates and hence 0 variance. To avoid this, we will show you how to apply the variance smoothing method suggested by [@you2023application]. Please see the code and Roxygen comments below explaining the use of the `varsmoothie_king()` function which computes smoothed variances. In case, the arcsin transformation will be applied, the variance smoothing
+described here is not necessary, since the arcsin transformation works variance stabilizing itself. When applying the arcsin transformation, the direct variances are automatically set to 1/(4*effective sampling size) when using the fh function of package emdi. The effective sample size equals the sample size of each area divided by the design effect. If the variance stabilizing effect is not enough, the design effect of a higher area level could also be used here (in this example the regions ac).
+
+```{r varsmooting}
+
+#' A function to perform variance smoothing
+#' 
+#' The variance smoothing function applies the methodology of (Hiridoglou and You, 2023)
+#' which uses simply log linear regression to estimate direct variances for sample 
+#' poverty rates which is useful for replacing poverty rates in areas with low sampling.
+#' 
+#' @param domain a vector of unique domain/target areas
+#' @param direct_var the raw variances estimated from sample data e=
+#' @param sampsize the sample size for each domain
+#' 
+#' @export
+
+varsmoothie_king <- function(domain,
+                             direct_var,
+                             sampsize){
+
+  dt <- data.table(Domain = domain,
+                   var = direct_var,
+                   n = sampsize)
+
+  dt$log_n <- log(dt$n)
+  dt$log_var <- log(dt$var)
+
+  lm_model <- lm(formula = log_var ~ log_n,
+                 data = dt[!(abs(dt$log_var) == Inf),])
+
+  dt$pred_var <- predict(lm_model, newdata = dt)
+  residual_var <-  summary(lm_model)$sigma^2
+  dt$var_smooth <- exp(dt$pred_var) * exp(residual_var/2)
+
+  return(dt[, c("Domain", "var_smooth"), with = F])
+
+}
+
+
+```
+
+OK, the goal now is to use the above `varsmoothie_king()` function to add an additional column of smoothed variances into our `direct_dt` dataframe. 
+
+```{r}
+var_smooth <- varsmoothie_king(domain = direct_dt$provlab,
+                                 direct_var = direct_dt$vardir,
+                                 sampsize = direct_dt$n)
+direct_dt <- var_smooth %>% merge(direct_dt, by.x = "Domain", by.y = "provlab")
+```
+
 
 ```{r variance_smoothing, message = FALSE, warning = FALSE}
-# Reference: Morales: A Course on SAE, 16.4 Sampling Error Variances
-comb_Data_in <- comb_Data[complete.cases(comb_Data$poor),]
-var_smooth_model <- lm(log(vardir) ~ n + poor, data = comb_Data_in)
-summary(var_smooth_model)
-
-residual_var <-  summary(var_smooth_model)$sigma^2
-comb_Data_in$var_smooth <- exp(predict(var_smooth_model)) * exp(residual_var / 2)
-comb_Data_in$se_smooth <- sqrt(comb_Data_in$var_smooth)
-comb_Data_in$cv_smooth <- comb_Data_in$se_smooth/ comb_Data_in$poor
-
-# Reference: adaption of You and Hidiroglou (2012) as shown in Hidiroglou, 
-# Beaumont, and Yung (2019)
 
 # all districts where the variance could not be estimated because only 1 enumeration area was sampled and because the district’s direct estimate is equal to 0 or 1 are not used for the modelling. Consequently, their small area estimate is composed entirely of their synthetic estimator. 
 #For all others, either the district’s sampling variance is used and in cases where the sampling variance is not available smoothed variance is used.
-
-comb_Data <- comb_Data |>
-  mutate(
-    log_s2 = log(vardir),
-    logN = log(N),
-    logN2 = logN^2,
-    logpop = log(pop),
-    logpop2 = logpop^2,
-    accra = as.numeric(region.x == 3),
-    share = log(N_hhsize / pop)
-  )
-
-fit <- lm(log_s2 ~ share, data = combined_data)
-summary(fit)
-phi2 <- summary(fit)$sigma^2
-combined_data$xb_fh <- predict(fit, combined_data)
-
-combined_data <- combined_data |>
-  mutate(
-    exp_xb_fh = exp(xb_fh),
-    smoothed_var = exp_xb_fh * (sum(dir_fgt0_var, na.rm = TRUE) / sum(exp_xb_fh, na.rm = TRUE)),
-    dir_fgt0_var = ifelse(((num_ea > 1 & !is.na(num_ea)) | (num_ea == 1 & zero != 0 & zero != 1)) & is.na(dir_fgt0_var),
-                                   smoothed_var, dir_fgt0_var),
-             dir_fgt0 = ifelse(!is.na(dir_fgt0_var), zero, dir_fgt0)
-  )
 ```
 
 Now, let us begin by preparing the set of variables for FH estimation. First, we will create more variable interactions. We have developed a function `create_interactions()`. See documentation with the Roxygen comments in the following chunk: 
@@ -264,10 +281,10 @@ with the province level data.
 
 ```{r comb, message = FALSE, warning = FALSE}
 combined_data <- combine_data(
-  pop_data = eusilcA_popAgg,
-  pop_domains = "Domain",
-  smp_data = eusilcA_smpAgg,
-  smp_domains = "Domain"
+  pop_data = prov_dt,
+  pop_domains = "provlab",
+  smp_data = direct_dt,
+  smp_domains = "provlab"
 )
 ```
 
