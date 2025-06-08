@@ -51,7 +51,8 @@ pacman::p_load(sae, survey, spdep, emdi, data.table, MASS, caret, dplyr)
 ```
 
 ### Load the dataset
-In this example, we use a synthetic data set adapted from R package `sae` called `incomedata`. The original data contains information for $n = 17,119$ fictitious individuals residing across $D = 52$ Spanish provinces. The variables include the name of the province of residence (`provlab`), province code (`prov`), as well as several correlates of income.  
+
+In this example, we use a synthetic data set adapted from R package `sae` called `incomedata`. The original data contains information for $n = 17,119$ fictitious individuals residing across $D = 52$ Spanish provinces. The variables include the name of the province of residence (`provlab`), province code (`prov`), as well as several correlates of income.
 
 For this tutorial, we use a random 10% sample of the `incomedata` to estimate the poverty rates. We use the income variable from 2012.
 
@@ -64,14 +65,15 @@ glimpse(income_dt)
 ```
 
 ### Direct estimation
+
 We will use the direct HT estimators that use the survey weights in `weight` variable. First, we calculate the total sample size, the number of provinces, the sample sizes for each province and extract the population sizes for each province/target area from the `sizeprov` file. For those using the household/individual level survey data, this may be obtained from the sum of the household or individual weights as appropriate.
 
 ```{r direct, message = FALSE, warning = FALSE}
 ## The poverty line for each is already included within the data. 
 ## Lets compute the direct estimates for each year of data and create a  data.frame containing the direct estimate, the standard errors, the variances, the coefficient of variation and the design effects, that are needed for arcsin transformation. We use
-## the direct function of the emdi package here. Other options are e.g. the direct function of package sae or the svyby command of package survey.
-
-data(sizeprov)
+## the direct function of the emdi package here. Other options are e.g. the direct function of package sae or the svyby command of package survey. In some areas with a 
+## very small sample size, it may occur, that the area only consists of zeros and ones, resulting in a direct estimate of zero or one and a direct variance of zero.
+## We set those areas to out-of-sample and for the final estimation results only the synthetic part of the FH model is used.
 
 ## quickly compute sample size for each province
 sampsize_dt <- 
@@ -100,16 +102,22 @@ direct_dt <-
                mutate(provlab = as.factor(provlab)), 
              by.x = "Domain", 
              by.y = "provlab")
+
+## set zero variance to OOS
+direct_dt <- direct_dt[complete.cases(direct_dt), ]
+
 ## The design effect is the ratio of the variance considering the sampling design to the variance estimated under
 ## simple random sampling.
 direct_dt$var_SRS <- direct_dt$Direct * (1 - direct_dt$Direct) / direct_dt$N
 direct_dt$deff <- direct_dt$vardir / direct_dt$var_SRS
-summary(direct_dt$n)    
+direct_dt <- direct_dt |>
+  mutate(n_eff = N/deff)
+summary(direct_dt$N)    
 ```
 
 ### Variance smoothing
-A quick inspection of the preceding results will show some provinces contain low sample sizes which sometimes result in extreme value poverty rates and hence 0 variance. To avoid this, we will show you how to apply the variance smoothing method suggested by [@you2023application]. Please see the code and Roxygen comments below explaining the use of the `varsmoothie_king()` function which computes smoothed variances. In case, the arcsin transformation will be applied, the variance smoothing
-described here is not necessary, since the arcsin transformation works variance stabilizing itself. When applying the arcsin transformation, the direct variances are automatically set to 1/(4*effective sampling size) when using the fh function of package emdi. The effective sample size equals the sample size of each area divided by the design effect. If the variance stabilizing effect is not enough, the design effect of a higher area level could also be used here (in this example the regions ac).
+
+A quick inspection of the preceding results will show some provinces contain low sample sizes which sometimes result in extreme value poverty rates and hence 0 variance. To avoid this, we will show you how to apply the variance smoothing method suggested by [@you2023application]. Please see the code and Roxygen comments below explaining the use of the `varsmoothie_king()` function which computes smoothed variances. In case, the arcsin transformation will be applied, the variance smoothing described here is not necessary, since the arcsin transformation works variance stabilizing itself. When applying the arcsin transformation, the direct variances are automatically set to 1/(4\*effective sampling size) when using the fh function of package emdi. The effective sample size equals the sample size of each area divided by the design effect. If the variance stabilizing effect is not enough, the design effect of a higher area level could also be used here (in this example the regions ac).
 
 ```{r varsmooting}
 
@@ -150,15 +158,14 @@ varsmoothie_king <- function(domain,
 
 ```
 
-OK, the goal now is to use the above `varsmoothie_king()` function to add an additional column of smoothed variances into our `direct_dt` dataframe. 
+OK, the goal now is to use the above `varsmoothie_king()` function to add an additional column of smoothed variances into our `direct_dt` dataframe.
 
 ```{r}
-var_smooth <- varsmoothie_king(domain = direct_dt$provlab,
+var_smooth <- varsmoothie_king(domain = direct_dt$Domain,
                                  direct_var = direct_dt$vardir,
-                                 sampsize = direct_dt$n)
-direct_dt <- var_smooth %>% merge(direct_dt, by.x = "Domain", by.y = "provlab")
+                                 sampsize = direct_dt$N)
+direct_dt <- var_smooth %>% merge(direct_dt, by = "Domain")
 ```
-
 
 ```{r variance_smoothing, message = FALSE, warning = FALSE}
 
@@ -166,87 +173,15 @@ direct_dt <- var_smooth %>% merge(direct_dt, by.x = "Domain", by.y = "provlab")
 #For all others, either the district’s sampling variance is used and in cases where the sampling variance is not available smoothed variance is used.
 ```
 
-Now, let us begin by preparing the set of variables for FH estimation. First, we will create more variable interactions. We have developed a function `create_interactions()`. See documentation with the Roxygen comments in the following chunk: 
+The FH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns:
 
+-   Variable for poverty rates
 
-```{r}
+-   The set of candidate variables from which the most predicted of poverty rates will be selected
 
-#' Create Interaction Terms Between a Variable and a List of Other Variables
-#'
-#' This function generates interaction terms between a specified variable (`interacter_var`) 
-#' and a list of other variables (`var_list`) in a given dataset. The resulting interaction 
-#' terms are returned in a new data frame.
-#'
-#' @param dt A `data.frame` or `data.table` containing the data.
-#' @param interacter_var A string specifying the name of the variable to interact with each variable in `var_list`.
-#' @param var_list A character vector of variable names in `dt` to be interacted with `interacter_var`.
-#'
-#' @return A `data.frame` containing the interaction terms. Each column is named using the pattern `var_X_interacter_var`.
-#'
-#' @examples
-#' \dontrun{
-#' dt <- data.frame(a = 1:5, b = 6:10, c = 11:15)
-#' create_interactions(dt, interacter_var = "a", var_list = c("b", "c"))
-#' }
-#'
-#' @export
+-   The target area variable identifier (i.e. in this case the province variable `prov` and `provlab`)
 
-
-create_interactions <- function(dt, interacter_var, var_list) {
-  # Ensure dt is a data.table
-  if (!"data.frame" %in% class(dt)) {
-    dt <- as.data.table(dt)
-  }
-  
-  # Check if interacter_var exists in the dataset
-  if (!(interacter_var %in% names(dt))) {
-    stop(paste(interacter_var, "not found in dataset"))
-  }
-  
-  # Check if var_list contains valid variables that exist in the dataset
-  if (any(!var_list %in% names(dt))) {
-    stop("Some variables in var_list are not found in the dataset.")
-  }
-  
-  # Create an empty data.table to store interactions
-  int_dt <- data.frame(matrix(nrow = nrow(dt)))
-  
-  # Loop over var_list to create interaction terms
-  for (var in var_list) {
-    interaction_name <- paste0(var, "_X_", interacter_var)
-    int_dt[[interaction_name]] <- dt[[var]] * dt[[interacter_var]]
-  }
-  
-  int_dt <- int_dt[, -1]
-  
-  return(int_dt)
-}
-
-### applying the create_interactions() functions
-income_dt <- 
-  income_dt %>%
-  cbind(create_interactions(dt = .,
-                            interacter_var = "gen",
-                            var_list = c("age2", "age3", "age4", "age5",
-                                         "educ1", "educ2", "educ3", "nat1",
-                                         "labor1", "labor2", "labor3"))) %>%
-  cbind(create_interactions(dt = .,
-                            interacter_var = "educ3",
-                            var_list = c("age2", "age3", "age4", "age5",
-                                         "nat1", "labor1", "labor2", "labor3"))) 
-
-
-```
-
-The FH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns: 
-
-* (1) Variable for poverty rates
-
-* (2) The set of candidate variables from which the most predicted of poverty rates will be selected
-
-* (3) The target area variable identifier (i.e. in this case the province variable `prov` and `provlab`)
-
-We prepare this dataset as follows: 
+We prepare this dataset as follows:
 
 ```{r}
 
@@ -259,13 +194,12 @@ candidate_vars <- colnames(income_dt)[!colnames(income_dt) %in%
                                            "ac", "nat", "educ", "labor",
                                            "age")]
 
-candidate_vars <- candidate_vars[!grepl("sampsize|prov|poverty|income|povline|^v[0-9]|^y[0-9]", 
-                                        candidate_vars)]
+candidate_vars <- candidate_vars[!grepl("sampsize|prov|poverty|income|povline|^v[0-9]|^y[0-9]", candidate_vars)] 
 
 ### computing the province level data
 prov_dt <- 
 income_dt |>
-  group_by(prov, provlab) |>
+  group_by(provlab) |>
   summarize(
     across(
       any_of(candidate_vars),
@@ -276,18 +210,13 @@ income_dt |>
 
 ```
 
-Now, we combine the dataframe containing the direct estimates and their variances
-with the province level data.
+Now, we combine the dataframe containing the direct estimates and their variances with the province level data.
 
 ```{r comb, message = FALSE, warning = FALSE}
-combined_data <- combine_data(
-  pop_data = prov_dt,
-  pop_domains = "provlab",
-  smp_data = direct_dt,
-  smp_domains = "provlab"
-)
+comb_Data <- merge(direct_dt, prov_dt,
+    by.x = "Domain", by.y = "provlab",
+    all = TRUE)
 ```
-
 
 ## Model selection
 
@@ -296,53 +225,38 @@ combined_data <- combine_data(
 FH does not run if there is any missing value in the auxiliary variables, and therefore, any variable with missing value should be removed in advance.
 
 ```{r fh_arcsin, message = FALSE, warning = FALSE}
-form <- poor ~ abs+ntl+aec+schyrs+mkt #+
-  #gen + age2+age3+age4+age5+educ1+educ2+    
- #educ3+nat1+labor1+labor2+labor3
-
 rowsNAcovariates <- rowSums(sapply(comb_Data[, candidate_vars], is.na))
 comb_Data <- comb_Data[rowsNAcovariates == 0, ]
 ```
 
 ### Build initial model
+
 First we build the initial model, to which the variable selection is then applied.
 
-In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a bias-corrected backtransformation ("bc"). Additionally, the effective sample size, which equals the sample size of each area divided by the design effect, is needed for the arcsin transformation. For the variable selection, we set the MSE estimation to
-FALSE. In case, no transformation is desired, the transformation argument must be
-set to "no" and the inputs backtransformation and eff_smpsize are no longer needed.
-
-```{r model_select, message = FALSE, warning = FALSE}
-comb_Data <- comb_Data |>
-  mutate(n_eff = n/DEff.poor)
-
-form <- as.formula(paste("poor ~ ",
-                         candidate_vars %>% paste(collapse = " + ")))
-
-fh_initial <- step(fh(
-  fixed = form,
-  vardir = "vardir", combined_data = comb_Data, domains = "provlab",
-  method = "ml", transformation = "arcsin", backtransformation = "bc",
-  eff_smpsize = "n_eff", MSE = FALSE)) 
-```
+In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a bias-corrected backtransformation ("bc"). Additionally, the effective sample size, which equals the sample size of each area divided by the design effect, is needed for the arcsin transformation. For the variable selection, we set the MSE estimation to FALSE. In case, no transformation is desired, the transformation argument must be set to "no" and the inputs backtransformation and eff_smpsize are no longer needed.
 
 ### Check multicollinearity
 
-With the help of the `step()` function of package emdi, we perform a variable selection based on the AIC criterion and directly get the model with fewer variables. The function `stepAIC_wrapper()` implemented below is a wrapper to the `step()` function carries all the perfunctory cleaning necessary use the `step()` function. This includes dropping columns that are entirely missing (`NA`) and keep only complete cases/observations and remove perfectly or near collinear variables and combinations using the variance inflation method.   
+With the help of the `step()` function of package emdi, we perform a variable selection based on the AIC criterion and directly get the model with fewer variables. The function `stepAIC_wrapper()` implemented below is a wrapper to the `step()` function carries all the perfunctory cleaning necessary use the `step()` function. This includes dropping columns that are entirely missing (`NA`) and keep only complete cases/observations (for the model selection only the in-sample domains are used) and remove perfectly or near collinear variables and combinations using the variance inflation method.
 
-```{r multicol, message = FALSE, warning = FALSE}
+```{r}
 
 #' A function to perform stepwise variable selection with AIC selection criteria
 #' 
 #' @param dt data.frame, dataset containing the set of outcome and independent variables
 #' @param xvars character vector, the set of x variables
 #' @param y chr, the name of the y variable
-#' @param vif_threshold integer, a variance inflation factor threshold
+#' @param cor_thresh double, a correlation threshold between 0 and 1
+#' @param criteria character string, criteria that can be chosen are "AIC", "AICc", "AICb1", "AICb2", "BIC", "KIC", "KICc", "KICb1", or "KICb2". Defaults to "AIC". If transformation is set to "arcsin", only "AIC" and "BIC" can be chosen.
+#' @param vardir character string, name of the variable containing the domain-specific sampling variances of the direct estimates that are included in dt
+#' @param transformation character string, either "no" (default) or "arcsin".
+#' @param eff_smpsize character string, name of the variable containing the effective sample sizes that are included in dt. Required argument when the arcsin transformation is chosen. Defaults to NULL.
 #' 
 #' @import data.table
-#' @importFrom cars vif
-#' @importFrom MASS stepAIC
+#' @importFrom emdi step
 
-stepAIC_wrapper <- function(dt, xvars, y, cor_thresh = 0.95) {
+step_wrapper <- function(dt, xvars, y, cor_thresh = 0.95, criteria = "AIC",
+                         vardir, transformation = "no", eff_smpsize) {
   
   dt <- as.data.table(dt)
   
@@ -352,7 +266,7 @@ stepAIC_wrapper <- function(dt, xvars, y, cor_thresh = 0.95) {
   xvars <- xvars[xvars %in% colnames(dt)]
   
   # Keep only complete cases
-  dt <- na.omit(dt[, c(y, xvars), with = FALSE])
+  dt <- dt[complete.cases(dt),] 
   
   # Step 1: Remove aliased (perfectly collinear) variables
   model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
@@ -393,10 +307,25 @@ stepAIC_wrapper <- function(dt, xvars, y, cor_thresh = 0.95) {
   
   # Final model fit
   model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
-  full_model <- lm(model_formula, data = dt)
   
   # Stepwise selection
-  stepwise_model <- stepAIC(full_model, direction = "both", trace = 0)
+  if (transformation == "no"){
+    stepwise_model <- step(fh(
+  fixed = model_formula,
+  vardir = vardir, combined_data = dt,
+  method = "ml", transformation = "no", MSE = FALSE, B = c(0, 50)),
+  criteria = criteria)
+  }
+  
+  if (transformation == "arcsin"){
+    stepwise_model <- step(fh(
+  fixed = model_formula,
+  vardir = vardir, combined_data = dt,
+  method = "ml", transformation = "arcsin", backtransformation = "bc",
+  eff_smpsize = "n_eff", MSE = FALSE),
+  criteria = criteria)
+  }
+  
   
   return(stepwise_model)
   
@@ -405,94 +334,26 @@ stepAIC_wrapper <- function(dt, xvars, y, cor_thresh = 0.95) {
 
 ```
 
-
-
-
-stepCOL <- function(dt, xvars, y, cor_thresh = 0.95) {
-  
-#   library(data.table)
- # library(MASS)        # For stepAIC
- # library(caret)       # For findLinearCombos
-  
-  dt <- as.data.table(dt)
-  
-  # Drop columns that are entirely NA
-  dt <- dt[, which(unlist(lapply(dt, function(x) !all(is.na(x))))), with = FALSE]
-  
-  xvars <- xvars[xvars %in% colnames(dt)]
-  
-  # Keep only complete cases
-  dt <- na.omit(dt[, c(y, xvars), with = FALSE])
-  
-  
-  # Step 3: Drop highly correlated variables
-  xmat <- as.matrix(dt[, ..xvars])
-  cor_mat <- abs(cor(xmat))
-  diag(cor_mat) <- 0
-  while (any(cor_mat > cor_thresh, na.rm = TRUE)) {
-    cor_pairs <- which(cor_mat == max(cor_mat, na.rm = TRUE), arr.ind = TRUE)[1, ]
-    var1 <- colnames(cor_mat)[cor_pairs[1]]
-    var2 <- colnames(cor_mat)[cor_pairs[2]]
-    # Drop the variable with higher mean correlation
-    drop_var <- if (mean(cor_mat[var1, ]) > mean(cor_mat[var2, ])) var1 else var2
-    xvars <- setdiff(xvars, drop_var)
-    xmat <- as.matrix(dt[, ..xvars])
-    cor_mat <- abs(cor(xmat))
-    diag(cor_mat) <- 0
-  }
-  
-  # Step 2: Remove near-linear combinations
- # xmat <- as.matrix(dt[, ..xvars])
-  combo_check <- tryCatch(findLinearCombos(xmat), error = function(e) NULL)
-  if (!is.null(combo_check) && length(combo_check$remove) > 0) {
-    xvars <- xvars[-combo_check$remove]
-    xmat <- as.matrix(dt[, ..xvars])
-  }
-  
-  # Step 1: Remove aliased (perfectly collinear) variables
-  model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
-  lm_model <- lm(model_formula, data = dt)
-  aliased <- is.na(coef(lm_model))
-  if (any(aliased)) {
-    xvars <- names(aliased)[!aliased & names(aliased) != "(Intercept)"]
-  }
-  return(xvars)
-}
-
-
-```
-
 ### Apply the function to remove the variables with high multicollinearity
 
 ```{r remove_multicol, message = FALSE, warning = FALSE}
-xvars_initial <- colnames(comb_Data[, all.vars(form)[-1]])
-xvars <- stepCOL(dt = comb_Data, xvars = xvars_initial,
-                                y = "poor",
-                                cor_thresh = 0.95)
-print(xvars)
-```
-
-### Model creation and variable selection
-
-In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a a bias-corrected backtransformation ("bc"). Additionally, the effective sample size, which equals the sample size of each area divided by the design effect, is needed for the arcsin transformation. 
-
-```{r model_select, message = FALSE, warning = FALSE}
-comb_Data <- comb_Data |>
-  mutate(n_eff = n/DEff.poor)
-
-fh_start <- step(fh(
-  fixed = poor ~ abs + ntl + aec + schyrs + mkt,
-  vardir = "vardir", combined_data = comb_Data, domains = "prov",
-  method = "ml", transformation = "arcsin", backtransformation = "bc",
-  eff_smpsize = "n_eff", MSE = FALSE)) 
+fh_step <- step_wrapper(dt = comb_Data, 
+                      xvars = candidate_vars,
+                      y = "Direct",
+                      cor_thresh = 0.8,
+                      criteria = "AIC",
+                      vardir = "vardir", 
+                      transformation = "arcsin", 
+                      eff_smpsize = "n_eff")
+print(fh_step$fixed)
 ```
 
 ## Model estimation of FH point and their MSE estimates.
 
 ```{r model_est, message = FALSE, warning = FALSE}
 fh_arcsin <- fh(
-  fixed = formula(fh_start),
-  vardir = "vardir", combined_data = comb_Data, domains = "prov",
+  fixed = formula(fh_step$fixed),
+  vardir = "vardir", combined_data = comb_Data, domains = "Domain",
   method = "ml", transformation = "arcsin", backtransformation = "bc",
   eff_smpsize = "n_eff", MSE = TRUE, mse_type = "boot", B = c(50, 0)) 
 
@@ -534,8 +395,21 @@ compare(fh_arcsin)
 ## Benchmark the FH point estimates for consistency with higher results.
 
 ```{r benchmarking, message = FALSE, warning = FALSE}
+## quickly creating the poverty indicator
+income_dt <- 
+  income_dt |>
+  mutate(poor2012 = ifelse(income2012 < povline2012, 1, 0))
+## computing the benchmark value
+benchmark_value <- weighted.mean(income_dt$poor2012, income_dt$weight)
+## computing the share of population size in the total population size (Ni/N) per area
+data("sizeprov")
+comb_Data <- comb_Data |>
+  left_join(sizeprov |>
+  mutate(ratio_n = Nd/sum(Nd)), by = c("Domain" ="provlab"))
+
+
 fh_bench <- benchmark(fh_arcsin,
-                      benchmark = 0.2165049,
+                      benchmark = benchmark_value,
                       share = comb_Data$ratio_n, 
                       type = "ratio",
                       overwrite = TRUE)
@@ -549,16 +423,9 @@ estimators(fh_arcsin, MSE = TRUE, CV = TRUE)
 
 ```
 
-### Visualize the results
-
-```{r visualize, message = FALSE, warning = FALSE}
-# map
-
-```
-
 ## Saving the results.
 
-### Save and output Final dataset
+### Export the model output and estimation results.
 
 ```{r save, message = FALSE, warning = FALSE}
 write.excel(fh_arcsin,
