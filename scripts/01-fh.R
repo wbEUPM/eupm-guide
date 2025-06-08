@@ -240,3 +240,20 @@ fh_bench <- benchmark(fh_log,
                       overwrite = TRUE)
 
 saveRDS(fh_log, "data/fh_log.RDS")
+
+#### load the shapefile
+spain_dt <- readRDS("data/shapes/spainshape.RDS")
+spain_dt <- st_as_sf(spain_dt)
+
+# Create a suitable mapping table to use numerical identifiers of the shape
+# file
+
+# First find the right order
+domain_ord <- match(spain_dt$provlab, fh_arcsin$ind$Domain)
+
+#Create the mapping table based on the order obtained above
+map_tab <- data.frame(pop_data_id = fh_arcsin$ind$Domain[domain_ord],
+                      shape_id = spain_dt$provlab)
+
+map_plot(object = fh_arcsin, MSE = TRUE, map_obj = spain_dt,
+         map_dom_id = "provlab",map_tab = map_tab)
