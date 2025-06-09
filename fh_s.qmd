@@ -156,13 +156,6 @@ direct_dt <- var_smooth %>% merge(direct_dt, by = "Domain")
 
 Now, we can replace the zero variances with their smoothed variances.
 
-```{r replace}
-direct_dt <- direct_dt %>%
-  mutate(
-    vardir = ifelse(((num_ea > 1 & !is.na(num_ea)) | (num_ea == 1 & zero != 0 & zero != 1)) & is.na(vardir),
-                                   var_smooth, vardir))
-```
-
 ### Auxiliary variable preparation
 
 The FH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns:
@@ -220,7 +213,7 @@ comb_Data <- merge(direct_dt, prov_dt,
 FH does not run if there is any missing value in the auxiliary variables, and therefore, any variable with missing value should be removed in advance.
 
 ```{r fh_model, message = FALSE, warning = FALSE}
-rowsNAcovariates <- rowSums(sapply(comb_Data[, c(candidate_vars)], is.na))
+rowsNAcovariates <- rowSums(sapply(comb_Data[,..candidate_vars], is.na))
 comb_Data <- comb_Data[rowsNAcovariates == 0, ]
 ```
 
@@ -305,22 +298,26 @@ step_wrapper <- function(dt, xvars, y, cor_thresh = 0.95, criteria = "AIC",
   model_formula <- as.formula(paste(y, "~", paste(xvars, collapse = " + ")))
   
   # Stepwise selection
-   if (transformation == "no"){
-    stepwise_model <- emdi::step(fh(
-  fixed = model_formula,
-  vardir = vardir, combined_data = dt,
-  method = "ml", transformation = "no", MSE = FALSE, B = c(0, 50)),
-  criteria = criteria)
+  fh_args <- list(
+    fixed = model_formula,
+    vardir = vardir,
+    combined_data = dt,
+    method = "ml",
+    MSE = FALSE
+  )
+
+  if (transformation == "arcsin") {
+    fh_args$transformation <- "arcsin"
+    fh_args$backtransformation <- "bc"
+    fh_args$eff_smpsize <- eff_smpsize
+  } else {
+    fh_args$transformation <- "no"
+    fh_args$B <- c(0, 50)
   }
+
+  fh_model <- do.call(emdi::fh, fh_args)
   
-  if (transformation == "arcsin"){
-    stepwise_model <- emdi::step(fh(
-  fixed = model_formula,
-  vardir = vardir, combined_data = dt,
-  method = "ml", transformation = "arcsin", backtransformation = "bc",
-  eff_smpsize = eff_smpsize, MSE = FALSE),
-  criteria = criteria)
-  }
+  stepwise_model <- emdi::step(fh_model, criteria = criteria)
  
   
   return(stepwise_model)
@@ -421,7 +418,7 @@ fh_bench <- benchmark(fh_model,
                       share = comb_Data$ratio_n, 
                       type = "ratio",
                       overwrite = TRUE)
-head(fh_bench)
+head(fh_bench$ind)
 ```
 
 ## Preparation of the results.
