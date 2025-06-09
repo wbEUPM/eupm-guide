@@ -22,8 +22,7 @@ Step 7: Preparation of the results. Create tables and maps of results.
 
 Step 8: Saving the results. One option is to export the results to known formats like Excel or OpenDocument Spreadsheets.
 
-We will show below the use of the `fh()` function from the R package emdi [@Harmening2023] which computes the EBLUPs and their MSE estimates of the standard
-FH model and several extensions of it, among others it allows for the application of transformations. The function call is:
+We will show below the use of the `fh()` function from the R package emdi [@Harmening2023] which computes the EBLUPs and their MSE estimates of the standard FH model and several extensions of it, among others it allows for the application of transformations. Because the poverty rate is a ratio, it might be helpful to apply the arcsin transformation to guarantee that the results lie between 0 and 1. The function call is:
 
 `fh(fixed, vardir, combined_data, domains = NULL, method = "reml", interval = NULL,   k = 1.345, mult_constant = 1, transformation = "no", backtransformation = NULL,   eff_smpsize = NULL, correlation = "no", corMatrix = NULL, Ci = NULL, tol = 1e-04,   maxit = 100, MSE = FALSE, mse_type = "analytical", B = c(50, 0), seed = 123)`
 
@@ -45,12 +44,12 @@ pacman::p_load(sae, survey, spdep, emdi, data.table, MASS, caret, dplyr, sf)
 ```
 
 ### Load the dataset
+
 Usually, SAE combines multiple data sources: a survey data set and a census or administrative/register dataset. For the estimation of area-level models, we need area-level aggregates of the same area-level (e.g. NUTS3) of both datasets. The target variable (typically household welfare/income for poverty mapping) is available in the survey but not in the census data.
 
 In this example, we use a synthetic data set adapted from R package `sae` called `incomedata`. The original data contains information for $n = 17,119$ fictitious individuals residing across $D = 52$ Spanish provinces. The variables include the name of the province of residence (`provlab`), province code (`prov`), as well as several correlates of income.
 
 For this tutorial, we use a random 10% sample of the `incomedata` to estimate the poverty rates. For the univariate case, we use the income variable from 2012.
-
 
 ```{r load_data, message = FALSE, warning = FALSE}
 income_dt <- readRDS("data/incomedata_sample.RDS")
@@ -155,6 +154,15 @@ var_smooth <- varsmoothie_king(domain = direct_dt$Domain,
 direct_dt <- var_smooth %>% merge(direct_dt, by = "Domain")
 ```
 
+Now, we can replace the zero variances with their smoothed variances.
+
+```{r replace}
+direct_dt <- direct_dt %>%
+  mutate(
+    vardir = ifelse(((num_ea > 1 & !is.na(num_ea)) | (num_ea == 1 & zero != 0 & zero != 1)) & is.na(vardir),
+                                   var_smooth, vardir))
+```
+
 ### Auxiliary variable preparation
 
 The FH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns:
@@ -211,7 +219,7 @@ comb_Data <- merge(direct_dt, prov_dt,
 
 FH does not run if there is any missing value in the auxiliary variables, and therefore, any variable with missing value should be removed in advance.
 
-```{r fh_arcsin, message = FALSE, warning = FALSE}
+```{r fh_model, message = FALSE, warning = FALSE}
 rowsNAcovariates <- rowSums(sapply(comb_Data[, c(candidate_vars)], is.na))
 comb_Data <- comb_Data[rowsNAcovariates == 0, ]
 ```
@@ -342,17 +350,17 @@ print(fh_step$fixed)
 In this example, we use the function fh to calculate the FH estimates. Because we want to estimate a ratio, we need to apply the arcsin transformation to guarantee that the results lie between 0 and 1. For that, we choose "arcsin" as transformation, and a bias-corrected backtransformation ("bc"). Additionally, the effective sample size, which equals the sample size of each area divided by the design effect, is needed for the arcsin transformation. We set the MSE estimation to TRUE, the mse_type to boot (necessary for the type of transformation) and determine the number of bootstrap iterations. For practical applications, values larger than 200 are recommended. In case, no transformation is desired, the transformation argument must be set to "no" and the inputs backtransformation and eff_smpsize are no longer needed.
 
 ```{r model_est, message = FALSE, warning = FALSE}
-fh_arcsin <- fh(
+fh_model <- fh(
   fixed = Direct ~ age2 + age3 + age4 + age5 + educ1 + ntl + schyrs, #formula(fh_step$fixed),
   vardir = "vardir", combined_data = comb_Data, domains = "Domain",
   method = "ml", transformation = "arcsin", backtransformation = "bc",
   eff_smpsize = "n_eff", MSE = TRUE, mse_type = "boot", B = c(50, 0)) 
 
-# Summary statistics of EBLUP estimates
-summary(fh_arcsin$ind$FH)
-
-# Summary statistics of MSE estimates
-summary(fh_arcsin$MSE$FH)
+## In case, no transformation is desired, e.g. when no negative FH estimates are in the results, the function would like this:
+# fh_model <- fh(
+#   fixed = Direct ~ age2 + age3 + age4 + age5 + educ1 + ntl + schyrs, #formula(fh_step$fixed),
+#   vardir = "vardir", combined_data = comb_Data, domains = "Domain",
+#   method = "ml", MSE = TRUE) 
 ```
 
 ## Assessment of the estimated model.
@@ -360,22 +368,20 @@ summary(fh_arcsin$MSE$FH)
 With the help of the `summary` method in the **emdi** package, we gain detailed insights into the data and model components. It includes information on the estimation methods used, the number of domains, the log-likelihood, and information criteria as proposed by Marhuenda et al. (2014). It also reports the adjusted R² from a standard linear model and the adjusted R² specific to FH models, as introduced by Lahiri and Suntornchost (2015). It also offers diagnostic measures to assess model assumptions regarding the standardized realized residuals and random effects. These include skewness and kurtosis (based on the *moments* package by Komsta and Novomestky, 2015), as well as Shapiro-Wilk test statistics and corresponding p-values to evaluate the normality of both error components.
 
 ```{r summary, message = FALSE, warning = FALSE}
-summary(fh_arcsin)
+summary(fh_model)
 ```
 
-We can see, that all domains have survey information and the variance of the random effects equals 7.643268e-05. All of the included auxiliary variables are significant on a 0.05 significance
-level and their explanatory power is large with an adjusted R2
-(for FH models) of around 0.74. The results of the Shapiro-Wilk-test indicate that normality is not rejected for both errors. 
+We can see, that all domains have survey information and the variance of the random effects equals 7.643268e-05. All of the included auxiliary variables are significant on a 0.05 significance level and their explanatory power is large with an adjusted R2 (for FH models) of around 0.74. The results of the Shapiro-Wilk-test indicate that normality is not rejected for both errors.
 
 ### Diagnostic plots
 
 We produce normal quantile-quantile (Q-Q) plots of the standardized realized residuals and random effects and plots of the kernel densities of the distribution of both error terms by the plots methods of emdi.
 
 ```{r plot, message = FALSE, warning = FALSE}
-plot(fh_arcsin)
+plot(fh_model)
 ```
-The plots show slight deviations of the distributions from normality, but together with the results of the Shapiro-Wilk-test, we do not reject the normality assumption.
 
+The plots show slight deviations of the distributions from normality, but together with the results of the Shapiro-Wilk-test, we do not reject the normality assumption.
 
 ## Comparison of the FH results with the direct estimates.
 
@@ -384,23 +390,25 @@ The FH estimates are expected to align closely with the direct estimates in doma
 Additionally, we compute a correlation coefficient of the direct estimates and the estimates of the regression-synthetic part of the FH model (Chandra et al., 2015) and a goodness of fit diagnostic (Brown et al., 2001).
 
 ```{r compare, message = FALSE, warning = FALSE}
-compare_plot(fh_arcsin, MSE = TRUE, CV = TRUE)
-compare(fh_arcsin)
+compare_plot(fh_model, MSE = TRUE, CV = TRUE)
+compare(fh_model)
 
 ```
-The direct estimates are tracked by most of the FH estimates within the line plot. The precision of the direct estimates could be improved by the usage of the FH model in terms of MSEs and CVs.
-The null hypothesis of the Brown test is not rejected and the correlation coefficient indicates a positive correlation (0.68) between the direct and FH estimates.
+
+The direct estimates are tracked by most of the FH estimates within the line plot. The precision of the direct estimates could be improved by the usage of the FH model in terms of MSEs and CVs. The null hypothesis of the Brown test is not rejected and the correlation coefficient indicates a positive correlation (0.68) between the direct and FH estimates.
 
 If the result of the model assessment is not satisfactory, the following should be checked again: Can the direct estimation including variance estimation be improved? Are there further auxiliary variables or must possible interaction effects be taken into account? Does a (different) transformation need to be used?
 
 ## Benchmark the FH point estimates for consistency with higher results.
-Benchmarking is based on the principle that aggregated FH estimates should sum up to the estimates at a higher regional level.
+
+Benchmarking is based on the principle that aggregated FH estimates should sum up to the estimates at a higher regional level. For the benchmark function, a benchmark value and a vector containing the shares of the population size per area (N_d/N) is required. Please note, that only the FH estimates are benchmarked and not their MSE estimates. As benchmark types raking, ratio and MSE_adj can be chosen. For further details about using the function, please refer to the emdi vignette and for general information about the benchmarking options to Datta et al. (2011).
+
 ```{r benchmarking, message = FALSE, warning = FALSE}
 ## quickly creating the poverty indicator
 income_dt <- 
   income_dt |>
   mutate(poor2012 = ifelse(income2012 < povline2012, 1, 0))
-## computing the benchmark value
+## computing the benchmark value (mean of poor2012 for the whole country of Spain)
 benchmark_value <- weighted.mean(income_dt$poor2012, income_dt$weight)
 ## computing the share of population size in the total population size (Ni/N) per area
 data("sizeprov")
@@ -408,25 +416,27 @@ comb_Data <- comb_Data |>
   left_join(sizeprov |>
   mutate(ratio_n = Nd/sum(Nd)), by = c("Domain" ="provlab"))
 
-
-fh_bench <- benchmark(fh_arcsin,
+fh_bench <- benchmark(fh_model,
                       benchmark = benchmark_value,
                       share = comb_Data$ratio_n, 
                       type = "ratio",
                       overwrite = TRUE)
-
+head(fh_bench)
 ```
 
 ## Preparation of the results.
 
 Create one data frame that contains the direct and FH estimation results including MSE and CV results.
+
 ```{r res_prep, message = FALSE, warning = FALSE}
-results <-as.data.frame(estimators(fh_arcsin, MSE = TRUE, CV = TRUE))
+results <-as.data.frame(estimators(fh_model, MSE = TRUE, CV = TRUE))
 results
 ```
 
 ### Poverty map
-With the help of geographical maps, the results can be presented in a user-friendly way and differences among the areas can be detected more easily. The domain identifiers in the data need to match to the respective identifiers of the shape file. Therefore, we create mapping table first. 
+
+With the help of geographical maps, the results can be presented in a user-friendly way and differences among the areas can be detected more easily. For the map, a shape file is reqired, The domain identifiers in the results data (fh_model) need to match to the respective identifiers of the shape file. Therefore, we create a mapping table first.
+
 ```{r fig-povmap}
 ## load the shapefile dataframe and convert it to an object of type sf which is a necessary input for the map_plot function
 spain_dt <- readRDS("data/shapes/spainshape.RDS")
@@ -435,14 +445,14 @@ spain_dt <- sf::st_as_sf(spain_dt)
 ## Create a suitable mapping table
 
 ## Find the right order
-domain_ord <- match(spain_dt$provlab, fh_arcsin$ind$Domain)
+domain_ord <- match(spain_dt$provlab, fh_model$ind$Domain)
 
 ## Create the mapping table based on the order obtained above
-map_tab <- data.frame(pop_data_id = fh_arcsin$ind$Domain[domain_ord],
+map_tab <- data.frame(pop_data_id = fh_model$ind$Domain[domain_ord],
                       shape_id = spain_dt$provlab)
 
 ## Create map
-map_plot(object = fh_arcsin, MSE = TRUE, map_obj = spain_dt,
+map_plot(object = fh_model, MSE = TRUE, map_obj = spain_dt,
  map_dom_id = "provlab", map_tab = map_tab)
 
 ```
@@ -451,18 +461,15 @@ map_plot(object = fh_arcsin, MSE = TRUE, map_obj = spain_dt,
 
 ### Save workspace.
 
-```{r save, message = FALSE, warning = FALSE}
-write.excel(fh_arcsin,
-  file = "fh_arcsin_output.xlsx",
-  MSE = TRUE, CV = TRUE
-)
+```{r save, message = FALSE, warning = FALSE, eval = FALSE}
+save.image("fh_estimation.RData")
 ```
 
 ### Export the model output and estimation results.
 
-```{r saveexcel, message = FALSE, warning = FALSE}
-write.excel(fh_arcsin,
-  file = "fh_arcsin_output.xlsx",
+```{r saveexcel, message = FALSE, warning = FALSE, eval = FALSE}
+write.excel(fh_model,
+  file = "fh_model_output.xlsx",
   MSE = TRUE, CV = TRUE
 )
 ```
