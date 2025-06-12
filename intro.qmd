@@ -8,11 +8,13 @@ Some overview ideas:
 
 -   Make a table to take a stock of methods and Corresponding R funciton/packages that implement it. For example, see @tbl-methods
 
-| Methods         | `sae`          | `emdi` | `SUMMER`               |
-|-----------------|----------------|--------|------------------------|
-| Spatial Fay-Herriot      | `sae::mseFH()` |        | `SUMMER::smoothArea()` |
-| FH Miltivariate |                |        |                        |
-| Autocorrelation |                |        |                        |
+| Methods             | `sae`          | `emdi` | `SUMMER`               |
+|---------------------|----------------|--------|------------------------|
+| Spatial Fay-Herriot | `sae::mseFH()` |        | `SUMMER::smoothArea()` |
+| FH Miltivariate     |                |        |                        |
+| Autocorrelation     |                |        |                        |
+
+: Methods overview  {#tbl-methods}
 
 Place figures under `images` and use them in the text as follows making sure to refer the sources correctly. For example, @fig-decission-tree is adapted from [@Corral2022, p. 5].
 
