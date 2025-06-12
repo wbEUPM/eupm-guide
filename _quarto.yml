@@ -9,7 +9,8 @@ book:
     - index.qmd
     - intro.qmd
     - data.qmd
-    # - fh.qmd
+    - fh.qmd
+    - fh_multivariate.qmd
     - ul.qmd
     - references.qmd
 
@@ -25,8 +26,8 @@ format:
     code-block-border-left: "#31BAE9"
     highlight-style: github
     
-  pdf:
-    documentclass: scrreprt
+  # pdf:
+  #   documentclass: scrreprt
 
 editor: visual
 
