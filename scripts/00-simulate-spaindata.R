@@ -111,8 +111,6 @@ incomedata %>%
 #### create some correlated variables at the province level and simulate them back into
 #### the income data
 
-set.seed(123)
-
 pov_dt <-
   pov_dt %>%
   mutate(
@@ -144,9 +142,171 @@ spain_dt <-
         by.x = "prov",
         by.y = "prov_code")
 
+### compute the variable set
+set.seed(123)
+
+dt <- 
+incomedata |>
+  group_by(provlab) |>
+  sample_frac(size = 0.25)
+
+survey_dt <- 
+  dt |>
+  mutate(weight = weight * 10) |>
+  ungroup() |>
+  dplyr::select(provlab, prov, starts_with("income"), starts_with("povline"), weight)
+
+
+#' Create Interaction Terms Between a Variable and a List of Other Variables
+#'
+#' This function generates interaction terms between a specified variable (`interacter_var`) 
+#' and a list of other variables (`var_list`) in a given dataset. The resulting interaction 
+#' terms are returned in a new data frame.
+#'
+#' @param dt A `data.frame` or `data.table` containing the data.
+#' @param interacter_var A string specifying the name of the variable to interact with each variable in `var_list`.
+#' @param var_list A character vector of variable names in `dt` to be interacted with `interacter_var`.
+#'
+#' @return A `data.frame` containing the interaction terms. Each column is named using the pattern `var_X_interacter_var`.
+#'
+#' @examples
+#' \dontrun{
+#' dt <- data.frame(a = 1:5, b = 6:10, c = 11:15)
+#' create_interactions(dt, interacter_var = "a", var_list = c("b", "c"))
+#' }
+#'
+#' @export
+
+
+create_interactions <- function(dt, interacter_var, var_list) {
+  # Ensure dt is a data.table
+  if (!"data.frame" %in% class(dt)) {
+    dt <- as.data.table(dt)
+  }
+  
+  # Check if interacter_var exists in the dataset
+  if (!(interacter_var %in% names(dt))) {
+    stop(paste(interacter_var, "not found in dataset"))
+  }
+  
+  # Check if var_list contains valid variables that exist in the dataset
+  if (any(!var_list %in% names(dt))) {
+    stop("Some variables in var_list are not found in the dataset.")
+  }
+  
+  # Create an empty data.table to store interactions
+  int_dt <- data.frame(matrix(nrow = nrow(dt)))
+  
+  # Loop over var_list to create interaction terms
+  for (var in var_list) {
+    interaction_name <- paste0(var, "_X_", interacter_var)
+    int_dt[[interaction_name]] <- dt[[var]] * dt[[interacter_var]]
+  }
+  
+  int_dt <- int_dt[, -1]
+  
+  return(int_dt)
+}
+
+### applying the create_interactions() functions
+incomedata <- 
+  incomedata %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "gen",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "educ1", "educ2", "educ3", "nat1",
+                                         "labor1", "labor2", "labor3"))) %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "educ3",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "nat1", "labor1", "labor2", "labor3"))) 
+
+candidate_vars <- colnames(incomedata)[!colnames(incomedata) %in% 
+                                         c("provlab", "prov", "income",
+                                           "weight", "povline", "y",
+                                           "poverty", "y0", "y1", "y2",
+                                           "p0_prov", "p1_prov", "p2_prov",
+                                           "ac", "nat", "educ", "labor",
+                                           "age")]
+
+candidate_vars <- candidate_vars[!grepl("sampsize|prov|poverty|income|povline|^v[0-9]|^y[0-9]", 
+                                        candidate_vars)]
+
+### compute the variable set
+set.seed(123)
+
+prov_dt <- 
+incomedata |>
+  group_by(provlab) |>
+  sample_frac(size = 0.25) |>
+  mutate(weight = weight * 10) |>
+  ungroup() |>
+  group_by(prov, provlab) |>
+  summarize(
+    across(
+      any_of(candidate_vars),
+      ~ weighted.mean(x = ., w = weight, na.rm = TRUE),
+      .names = "{.col}"
+    )
+  ) 
+
+
+income_dt <- readRDS("data/incomedata_sample.RDS")
+
+income_dt <- 
+  income_dt %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "gen",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "educ1", "educ2", "educ3", "nat1",
+                                         "labor1", "labor2", "labor3"))) %>%
+  cbind(create_interactions(dt = .,
+                            interacter_var = "educ3",
+                            var_list = c("age2", "age3", "age4", "age5",
+                                         "nat1", "labor1", "labor2", "labor3"))) 
+
+
+
+## create the candidate variables
+candidate_vars <- colnames(income_dt)[!colnames(income_dt) %in% 
+                                        c("provlab", "prov", "income",
+                                          "weight", "povline", "y",
+                                          "poverty", "y0", "y1", "y2",
+                                          "p0_prov", "p1_prov", "p2_prov",
+                                          "ac", "nat", "educ", "labor",
+                                          "age")]
+
+candidate_vars <- candidate_vars[!grepl("sampsize|prov|poverty|income|povline|^v[0-9]|^y[0-9]", 
+                                        candidate_vars)]
+
+### computing the province level data
+prov_dt <- 
+  income_dt |>
+  group_by(prov, provlab) |>
+  summarize(
+    across(
+      any_of(candidate_vars),
+      ~ weighted.mean(x = ., w = weight, na.rm = TRUE),
+      .names = "{.col}"
+    )
+  ) 
+
+### select the poverty data
+survey_dt <- 
+ income_dt |>
+  dplyr::select(provlab, prov, starts_with("income"), starts_with("povline"), weight)
+
+### create the set of model variables
+
+
+
+
+
+saveRDS(survey_dt, "data/incomedata_survey.RDS")
+
+saveRDS(prov_dt, "data/shapes/simadmin.RDS")
+
 saveRDS(spain_dt, "data/shapes/spainshape.RDS")
-
-
 
 saveRDS(incomedata, "data/incomedata.RDS")
 

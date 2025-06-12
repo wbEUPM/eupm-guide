@@ -17,16 +17,7 @@ pacman::p_load(sf, data.table, tidyverse, car, msae, sae, survey, spdep)
 
 income_dt <- readRDS("data/incomedata.RDS")
 
-### sample 10% of the population
-set.seed(123)
 
-income_dt <- 
-  income_dt |>
-  group_by(provlab) |>
-  sample_frac(size = 0.1) |>
-  mutate(weight = weight * 10)
-
-saveRDS(income_dt, "data/incomedata_sample.RDS")
 
 shp_dt <- readRDS("data/shapes/spainshape.RDS")
 
@@ -888,11 +879,6 @@ list.files(path = "scripts",
            full.names = TRUE) %>%
   lapply(X = .,
          FUN = source)
-
-
-
-
-
 
 
 
