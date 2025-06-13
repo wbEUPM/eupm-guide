@@ -1,0 +1,910 @@
+# Estimation of price deflators ----		
+
+# Input (from Sec.1)
+## id.rds : HH information (location,etc)
+## "cpi.rds"
+## "ca_nominal_t2.rds"
+
+# 2.Estimation of price deflators	----
+
+## 2.1 Traditional Price deflator with extension: Paasche Index ----
+
+### 2.1.1 Preparation of food expenditure data and calculation of food Paasche index ----
+# This code creates a dataset containing input for budget shares at hh level 
+# that are necessary for food Paasche and food+rent Paasche exteded indexes. 
+
+### FOOD EXPENDITURE data ###
+
+# Load food item data
+food_item <- readRDS(file.path(data_in, "food_item.rds"))
+cpi <- readRDS(file.path(data_in, "cpi.rds"))
+
+#Add quarterly rebased CPI
+food<- mg(food_item,cpi,key=c("quarter"), drop_merge = TRUE)
+
+
+
+# Compute real food expenditure
+food <-  food %>%
+  mutate(foodexp = cons / cpi,
+         foodexp = foodexp / hhsize)
+food_expenditure_item <- food 
+rm(food)
+
+# Save food expenditure at item level
+saveRDS(food_expenditure_item, file.path(data_temp, "food_expenditure_item.rds"))
+
+# Compute food expenditure at household level
+food_expenditure <- food_expenditure_item %>%
+  group_by(hhid) %>%
+  summarise(foodexp = sum(foodexp, na.rm = TRUE), 
+            urban = first(urban),
+            location = first(location), 
+            region = first(region), 
+            nuts2 = first(nuts2), 
+            mregion = first(mregion))
+
+saveRDS(food_expenditure, file.path(data_temp, "food_expenditure.rds"))
+
+
+
+### HOUSING EXPENDITURE ###
+
+# Load housing data
+housing_expenditure <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
+housing_expenditure <- housing_expenditure %>%
+  select(hhid, quarter, ca_rent)
+
+hh_info <- readRDS(file.path(data_in, "hh_info.rds"))
+
+# Merge datasets
+housing_expenditure <- mg(housing_expenditure,cpi,key=c("quarter"), drop_merge = TRUE)
+housing_expenditure <- mg(housing_expenditure, hh_info, key=c("hhid"), drop_merge = TRUE)
+
+#Calculate monthly food expenditure per capita with price adjusted quarterly
+housing_expenditure <- housing_expenditure %>%
+  mutate(rentexp = ca_rent / cpi /12/ hhsize)
+
+#Save rent and housing data.
+saveRDS(housing_expenditure, file.path(data_temp, "housing_expenditure.rds"))
+
+
+# Merge food and housing expenditure data
+budget_shares <- mg(food_expenditure, housing_expenditure, key=c("hhid"), drop_merge = TRUE)
+
+#Rename variables and calculate the total household food and food & rent total. 
+budget_shares <- budget_shares %>%
+  rename(expenditure_food = foodexp, expenditure_rent = rentexp)  %>%
+  mutate(expenditure_hh_fr = rowSums(select(., expenditure_food, expenditure_rent), na.rm = TRUE)) %>%
+  mutate(expenditure_hh_f = expenditure_food)
+
+#Adding variable labels and keep only variables to be used. 
+var_label(budget_shares$expenditure_hh_f) <-  "hh expenditure on food"
+var_label(budget_shares$expenditure_hh_fr) <- "hh expenditure on food and rent"
+budget_shares_input <- budget_shares %>%
+  select(hhid,urban,location, region, nuts2, mregion, starts_with(c("expenditure_")), hhsize)
+
+#Descriptive stas of expenditure variables. 
+summary(budget_shares_input[, c("expenditure_hh_f", "expenditure_hh_fr", "expenditure_rent")])
+
+#Save the budget shares file to be worked below. 
+write_rds(budget_shares_input, file.path(data_temp, "budget_shares_input.rds"), compress = "gz")
+
+
+### 2.1.2 Getting the elements to get Paasche Indexes ----
+
+#### 2.1.2.1 Food ----
+# Load food item data
+food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds"))
+
+# Compute mean prices
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(foodq = cons_q,
+         up = foodexp / foodq)
+
+# Compute mean price at national level
+up0_mean <- food_expenditure_item %>%
+  mutate(up = as.numeric(up)) %>%
+  group_by(code) %>%
+  summarise(up0_mean = mean(up, na.rm = TRUE))
+
+up0_p50 <- food_expenditure_item %>%
+  mutate(up = as.numeric(up)) %>%
+  group_by(code) %>%
+  summarise(up0_p50 = median(up, na.rm=TRUE))
+
+# Merge price data
+food_expenditure_item <- mg(food_expenditure_item, up0_mean, key=c("code"))
+if (any(food_expenditure_item$merge != 3)) {
+  stop("Check: You have unmatched bservations.")
+}
+## Make sure if dropping merge=2 is OK if exists.
+food_expenditure_item <- food_expenditure_item %>%
+  filter(merge!=2) %>% 
+  select(-merge) 
+
+## Make sure if dropping merge=2 is OK if exists.
+food_expenditure_item <- mg(food_expenditure_item, up0_p50, key=c("code")) %>%
+  filter(merge!=2) %>% 
+  select(-merge) 
+
+## Make sure if dropping merge=2 is OK if exists.
+food_expenditure_item <- mg(food_expenditure_item, budget_shares_input, key=c("hhid")) %>%
+  filter(merge==3) %>% 
+  select(-merge) 
+
+# Generate budget shares of each food item used Paasche Indexes
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(w_f_f = foodexp / expenditure_hh_f,
+         w_f_fr = foodexp / expenditure_hh_fr)
+
+var_label(food_expenditure_item$w_f_f) <-   "Food item budget share of food paasche"
+var_label(food_expenditure_item$w_f_fr) <-  "Food item budget share of extended paasche (food + rent)"
+
+# Check food shares 
+check <- food_expenditure_item %>%
+  group_by(hhid) %>%
+  mutate(check_f = sum(w_f_f, na.rm = TRUE)) %>%
+  ungroup()
+summary(check$check_f)
+
+# Check if all check_f values round to 1 (equivalent to Stata `assert round(check_f) == 1`)
+if (!all(dplyr::near(check$check_f, 1, tol = 0.01))) {
+  stop("Not all values of check_f are approximately 1 within a tolerance of 0.01")
+}      
+
+
+# Robustify the denominator of the food paasche (up)	
+
+# Ensure `up` is numeric
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(up = as.numeric(up))
+
+# Compute `up_mean` and `up_p50` at `(code, nuts2)` level
+up_stats <- food_expenditure_item %>%
+  group_by(code, nuts2) %>%
+  summarise(
+    up_mean = mean(up, na.rm = TRUE),
+    up_p50 = median(up, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Merge aggregated values back into the full dataset
+food_expenditure_item <- mg(food_expenditure_item, up_stats, key=c("code", "nuts2"))
+
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(
+    check = up0_mean / up_mean,  # Generate check variable
+    inve_paasche_food = w_f_f * (up0_mean / up_mean),
+    inve_paasche_food_fr = w_f_fr * (up0_mean / up_mean),
+    inve_paasche_food_p50 = w_f_f * (up0_p50 / up_p50),  # Now properly sized
+    inve_paasche_food_fr_p50 = w_f_fr * (up0_p50 / up_p50)  # Now properly sized
+  )
+
+
+summary(food_expenditure_item$check)
+check2<- food_expenditure_item %>%
+  group_by(hhid) %>%
+  mutate(check2 = sum(w_f_f, na.rm = TRUE)) %>%
+  ungroup()
+# Assert: Check if all check2 values round to 1 (equivalent to Stata `assert round(check_f) == 1`)
+if (!all(dplyr::near(check2$check2, 1, tol = 0.01))) {
+  stop("Not all values of check2 are approximately 1 within a tolerance of 0.01")
+}            
+
+food_expenditure_item <- food_expenditure_item %>%
+  select(-check)
+
+
+# Check all values are numeric
+# food_expenditure_item <- food_expenditure_item %>%
+#   mutate(across(starts_with("inve_paasche"), ~ suppressWarnings(as.numeric(.))))
+# 
+# summary(food_expenditure_item$inve_paasche_food)
+
+
+# Aggregate by household
+food_file <- food_expenditure_item %>%
+  group_by(hhid) %>%
+  summarise(
+    across(starts_with("inve_paasche"), ~ sum(., na.rm = TRUE)),  # Sum all inve_paasche* variables
+    across(starts_with("w_f_"), ~ sum(., na.rm = TRUE))  # Sum all w_f_* variables
+  )
+
+label(food_file$inve_paasche_food) <- 	"Food Paasche - HH level"
+label(food_file$inve_paasche_food_fr) <- 	"Food innput of extended paasche (food+rent)"
+label(food_file$inve_paasche_food_p50) <-     "Food Paasche (p50)- HH level"
+label(food_file$inve_paasche_food_fr_p50) <-   "Food input of extended paasche (p50, food+rent)"
+
+summary(food_file[, c("inve_paasche_food","inve_paasche_food_fr", "inve_paasche_food_p50",
+                      "inve_paasche_food_fr_p50","w_f_f","w_f_fr")]) ## same as stata 
+
+write_rds(food_file, file.path(data_temp, "food_file.rds"), compress = "gz")
+
+
+#### 2.1.2.2 Non-food (housing) ----
+# Load housing data
+housing_expenditure <- readRDS(file.path(data_temp, "housing_expenditure.rds")) %>%
+  rename(rent_expenditure = rentexp)
+
+# Compute mean rent at national and regional levels
+mrent0 <- mean(housing_expenditure$rent_expenditure, na.rm = TRUE)
+mrent <- housing_expenditure %>%
+  group_by(nuts2) %>%
+  summarise(mrent = mean(rent_expenditure, na.rm = TRUE))
+
+housing_expenditure <- mg(housing_expenditure, mrent, key=c("nuts2"))
+housing_expenditure <- housing_expenditure %>%
+  mutate(mrent0 = if_else(is.na(mrent0), mean(mrent0, na.rm = TRUE), mrent0)) %>%
+  select(-merge)
+
+summary(housing_expenditure[, c("mrent0", "mrent")]) ## same as stata 
+
+budget_shares_input <- readRDS(file.path(data_temp, "budget_shares_input.rds"))
+
+# Bring in input for computing budget shares
+housing_expenditure <- mg(housing_expenditure, budget_shares_input, key=c("hhid"))
+
+rent_file <- housing_expenditure %>%
+  filter(merge==3) %>%
+  select(-merge) %>%
+  mutate(
+    w_r_fr = rent_expenditure / expenditure_hh_fr,  # Compute rent budget share
+    inve_paasche_rent_fr = w_r_fr * (mrent0 / mrent)  # Compute Paasche index for rent
+  ) %>%
+  select(hhid, urban, location, region, nuts2, mregion, w_r_fr, inve_paasche_rent_fr)
+label(rent_file$inve_paasche_rent_fr) <- "Rent input of extended paasche (food+rent)"
+
+write_rds(rent_file, file.path(data_temp, "rent_file.rds"), compress = "gz")
+
+
+#### 2.1.2.3  Merging food and non-food(housing) expenditure datasets  ----
+
+# Merge food and housing files
+paasche_extended <- mg(food_file, rent_file, key=c("hhid"), drop_merge = TRUE)
+
+# Check on shares - Food shares have been checked above
+paasche_extended <- paasche_extended %>%
+  mutate(check_fr = rowSums(select(., w_f_fr, w_r_fr), na.rm = TRUE))
+summary(paasche_extended$check_fr)
+stopifnot(all(round(paasche_extended$check_fr, 2) == 1))
+paasche_extended <- paasche_extended %>%
+  select(-check_fr)
+
+### 2.1.3 Calculation of Paasche price indexes ----
+#Calculation of Food SPI & Extended SPI: food + rent
+paasche_extended <- paasche_extended %>%
+  mutate(spi_food = 1 / inve_paasche_food,
+         spi_food_p50 = 1 / inve_paasche_food_p50,
+         spi_food_rent = 1 / (inve_paasche_food_fr + inve_paasche_rent_fr),
+         spi_food_rent_p50 = 1 / (inve_paasche_food_fr_p50 + inve_paasche_rent_fr))
+
+label(paasche_extended$spi_food) <- "Paasche Food Index"
+label(paasche_extended$spi_food_p50) <- "Paasche Food Index (p50)"
+label(paasche_extended$spi_food_rent) <- "Paasche index (food+rent)"
+label(paasche_extended$spi_food_rent_p50) <- "Paasche index (p50, food+rent)"
+
+summary(paasche_extended[, c("spi_food", "spi_food_p50", "spi_food_rent", "spi_food_rent_p50")]) ## same as stata 
+
+paasche_extended <- paasche_extended %>%
+  select(hhid, urban, location, region, nuts2, mregion, 
+         w_f_f, w_f_fr, w_r_fr, 
+         inve_paasche_food, inve_paasche_food_p50, 
+         inve_paasche_food_fr, inve_paasche_food_fr_p50, 
+         inve_paasche_rent_fr, 
+         spi_food, spi_food_p50, spi_food_rent, spi_food_rent_p50, everything()) %>%
+  arrange(urban, location, region, nuts2, mregion, hhid)
+
+write_rds(paasche_extended, file.path(data_temp, "paasche_extended.rds"), compress = "gz")
+
+#### 2.1.2.3 Tables for food and extended SPI
+# Mean spi_food and spi_food_rent at the NUTS2 level
+nuts2_summary <- paasche_extended  %>%
+  group_by(nuts2) %>%
+  summarise(
+    mean_spi_food = mean(spi_food, na.rm = TRUE),
+    mean_spi_food_rent = mean(spi_food_rent, na.rm = TRUE),
+    mean_spi_food_p50 = mean(spi_food_p50, na.rm = TRUE),
+    mean_spi_food_rent_p50 = mean(spi_food_rent_p50, na.rm = TRUE)
+  )
+
+print(nuts2_summary)
+
+# Mean spi_food and spi_food_rent at the macro region level
+mregion_summary <- paasche_extended  %>%
+  group_by(mregion) %>%
+  summarise(
+    mean_spi_food = mean(spi_food, na.rm = TRUE),
+    mean_spi_food_rent = mean(spi_food_rent, na.rm = TRUE)
+  )
+
+print(mregion_summary)
+
+
+## 2.2 Full coverage index ----	
+### 2.2.1 Preparation: Food calorie conversion table ----
+
+# Load food calorie conversion factor table in Excel
+kcal_conversion_factors <- read_excel(file.path(data_in,"kcal_conversion_factors.xlsx"))
+
+# Clean up the data
+## Need to convert to numeric from character
+kcal_conversion_factors <- kcal_conversion_factors %>%
+  select(-Note)
+kcal_conversion_factors$kcal100g <- as.numeric(kcal_conversion_factors$kcal100g)    
+
+# Load food item data and merge with calorie conversion factors
+food_item<- readRDS(file.path(data_in, "food_item.rds"))
+
+foodkcal <- mg(food_item, kcal_conversion_factors, key=c("code"))
+foodkcal <- foodkcal %>%    
+  select(-merge)
+
+#Count if we have missing in kcal100g (calorie conversion) to confirm zero.
+sum(is.na(foodkcal$kcal100g))
+
+# Generate kcal variable for each item
+foodkcal$kcal <- foodkcal$cons_q * (foodkcal$edible / 100) * (foodkcal$kcal100g / 100)
+# Check var kcal
+skim(foodkcal$kcal)
+
+# Tabulate codes with kcal > 100000
+foodkcal %>%
+  filter(kcal > 100000) %>%
+  dplyr::count(description) %>%  
+  arrange(desc(n))
+
+# Mean cons_q and kcal100g for high kcal items
+foodkcal %>%
+  filter(kcal > 100000) %>%
+  group_by(description) %>%
+  summarise(
+    mean_cons_q = mean(cons_q, na.rm = TRUE),
+    mean_kcal100g = mean(kcal100g, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# Tabulate codes where kcal == 0 and cons_q != 0
+foodkcal %>%
+  filter(kcal == 0, cons_q != 0) %>%
+  dplyr::count(code) %>%
+  arrange(desc(n))
+
+# Drop cigarettes and cigars
+foodkcal <- foodkcal %>%
+  filter(!(code %in% c(22011, 22021)))
+
+# Sum the kcal at household level and per capita
+kcal<- foodkcal %>%
+  group_by(hhid) %>%
+  mutate(kcal_total = sum(kcal, na.rm = TRUE)) %>%
+  mutate(kcalpc = (kcal_total / (365 / 12)) / hhsize)
+
+# Round kcalpc to integer. 
+kcal$kcalpc <- round(kcal$kcalpc, 0)
+
+# Create hhtag which =1 only one time per household. 
+kcal <- kcal %>%
+  group_by(hhid) %>%
+  mutate(hhtag = row_number() == 1) %>%
+  ungroup()
+
+# Calculate cutoffs for trimming
+cutoffs <- kcal %>%
+  filter(hhtag) %>%
+  summarise(
+    p1 = quantile(kcalpc, 0.01, na.rm = TRUE),
+    p99 = quantile(kcalpc, 0.99, na.rm = TRUE)
+  )
+
+# Trim top/bottom 1% of kcalpc.
+kcal <- kcal %>%
+  filter(kcalpc >= cutoffs$p1, kcalpc <= cutoffs$p99)
+
+# Descriptive stat of kcalpc
+skim(kcal$kcalpc)
+
+# Sort by household id and kcal
+kcal <-  kcal %>%
+  arrange(hhid, desc(kcal))
+
+# Collapse data and getting total kcalpc (mean) and total cons and cons_q by HHs.  
+## Note kcalpc is already total as calculated above.
+kcal <- kcal %>%
+  group_by(hhid) %>%
+  summarise(
+    kcalpc = mean(kcalpc, na.rm = TRUE),
+  )
+
+skim(kcal)
+#No missing in kcalpc
+
+# labelling 
+label(kcal$kcalpc) <- "Daily kilocalories consumed (per capita)"
+
+write_rds(kcal, file.path(data_temp, "kcal.rds"), compress = "gz")
+
+
+###	2.2.2 Regional (Nuts2) Poverty Lines Estimation ----
+#####	2.2.2.1 CBN poverty lines: FPL
+ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
+
+ca_nominal_t2 <- ca_nominal_t2 %>%
+  select(
+    hhid,
+    starts_with("mpce"),
+    hhsize,
+    urban,
+    location,
+    region,
+    nuts2,
+    mregion,
+    starts_with("w")
+  )    
+
+ca_kcal <- mg(ca_nominal_t2, kcal, key = c("hhid"))
+#drop trimmed observations
+ca_kcal <- ca_kcal %>% filter(merge != 1)
+ca_kcal <- ca_kcal %>%
+  select(-merge)
+
+# Loop over nuts2
+nuts2_list <- unique(ca_nominal_t2$nuts2)
+print(nuts2_list)
+
+#Note run the following loop altogether. 
+
+for (m in nuts2_list) {
+  nuts2_data <- ca_kcal %>% filter(nuts2 == m)
+  
+  nuts2_data <- nuts2_data %>%
+    mutate(ukcal = (mpcet_food / (365 / 12)) / kcalpc)
+  
+  vars_to_drop <- grep("_dec$", names( nuts2_data ), value = TRUE)
+  nuts2_data  <-  nuts2_data [ , !(names(nuts2_data) %in% vars_to_drop)]
+  
+  nuts2_data <- nuts2_data%>%
+    arrange(hhid) %>%
+    mutate(mpcet_dec = ntile(mpcet, 10))
+  
+  
+  ####	2.2.2.1 CBN poverty lines: FPL ----
+  
+  # Food poverty line 
+  er <- 2200
+  
+  # Reference group for mean ukcal 
+  
+  mukcal <- nuts2_data %>%
+    filter(mpcet_dec %in% 1:3) %>%
+    summarise(mean_ukcal = mean(ukcal, na.rm = TRUE)) %>%
+    pull(mean_ukcal)
+  
+  nuts2_data <- nuts2_data %>%
+    mutate(fpl = round(er * mukcal * (365 / 12)),0)  %>%
+    mutate(n_fpl = sum(!is.na(ukcal[mpcet_dec %in% 1:3])))  %>%
+    mutate(n_smp = sum(!is.na(ukcal)))
+  
+  label(nuts2_data$n_fpl) <- "N obs used for food pline"
+  label(nuts2_data$n_smp) <- "N obs"          
+  label(nuts2_data$fpl) <- "Food PL (PLN/person/month)"
+  
+  skim(nuts2_data$fpl)
+  
+  
+  ### 2.2.2.2	CBN poverty lines: non-food allowances ----
+  
+  
+  width <- 0.10
+  nuts2_data <- nuts2_data %>%
+    mutate(
+      bot = fpl * (1 - width),
+      top = fpl * (1 + width),
+      botk = er * (1 - width),
+      topk = er * (1 + width)
+    )
+  
+  nuts2_data <- nuts2_data %>%
+    mutate(mpcet_nf = mpcet - mpcet_food)
+  
+  # NFA lower bound / upper 
+  
+  lbnfa <- nuts2_data %>%
+    filter(mpcet >= bot & mpcet <= top) %>%
+    summarise(median_mpcet_nf = median(mpcet_nf, na.rm = TRUE)) %>%
+    pull(median_mpcet_nf)
+  
+  ubnfa <- nuts2_data %>%
+    filter(mpcet_food >= bot & mpcet_food <= top & kcalpc >= botk & kcalpc <= topk) %>%
+    summarise(median_mpcet_nf = median(mpcet_nf, na.rm = TRUE)) %>%
+    pull(median_mpcet_nf)
+  
+  n_ubpl <- nuts2_data %>%
+    filter(mpcet_food >= bot & mpcet_food <= top & kcalpc >= botk & kcalpc <= topk) %>%
+    summarise(count_ubpl = sum(!is.na(mpcet_nf))) %>%
+    pull(count_ubpl)
+  
+  n_lbpl <- nuts2_data %>%
+    filter(mpcet >= bot & mpcet <= top) %>%
+    summarise(count_lbpl = sum(!is.na(mpcet_nf))) %>%
+    pull(count_lbpl)
+  
+  nuts2_data <- nuts2_data %>%
+    mutate(
+      lbpl = fpl + lbnfa,
+      ubpl = fpl + ubnfa,
+      n_lbpl = n_lbpl,
+      n_ubpl = n_ubpl
+    )
+  
+  nuts2_data <- nuts2_data %>%
+    mutate(w_z = ifelse(mpcet_food >= bot & mpcet_food <= top & kcalpc >= botk & kcalpc <= topk, mpcet_food / mpcet, NA))
+  
+  nuts2_summary <- nuts2_data %>%
+    group_by(nuts2) %>%
+    summarise(
+      fpl = mean(fpl, na.rm = TRUE),
+      lbnfa = mean(lbnfa, na.rm = TRUE),
+      ubnfa = mean(ubnfa, na.rm = TRUE),
+      lbpl = mean(lbpl, na.rm = TRUE),
+      ubpl = mean(ubpl, na.rm = TRUE),
+      n_fpl = mean(n_fpl, na.rm = TRUE),
+      n_lbpl = mean(n_lbpl, na.rm = TRUE),
+      n_ubpl = mean(n_ubpl, na.rm = TRUE),              
+      w_z = mean(w_z, na.rm = TRUE)
+    )
+  
+write_rds(nuts2_summary, file.path(data_temp, paste0("poverty_line_nominal_nuts2_", m, ".rds")), compress = "gz")
+}
+
+
+# Append all nuts2 files
+overall_poverty <- bind_rows(lapply(nuts2_list, function(m) {
+  readRDS(file.path(data_temp, paste0("poverty_line_nominal_nuts2_", m, ".rds")))
+}))
+
+#loop end here
+
+write_rds(overall_poverty, file.path(data_temp,"poverty_line_nominal_nuts2.rds"), compress = "gz")
+
+
+
+###	2.2.3 Calculation of FULL COVERAGE Deflator ----
+#Compute SPI food (nuts2 level)
+food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
+  rename(foodq = cons_q) %>%
+  mutate(up = foodexp / foodq)   # Mean price at household level
+
+up0 <- food_expenditure_item %>%
+  group_by(code) %>%
+  summarise(up0 = mean(up, na.rm = TRUE), .groups = "drop")
+
+up_r <- food_expenditure_item %>%
+  group_by(code, nuts2) %>%
+  summarise(up_r = mean(up, na.rm = TRUE), .groups = "drop")
+
+food_expenditure_item <- mg(food_expenditure_item, ca_nominal_t2, key=c("hhid"))
+food_expenditure_item <- food_expenditure_item %>%
+  filter(merge==3) %>%
+  select(-merge) %>%
+  mutate(w_f = foodexp / mpcet)
+
+var_label(food_expenditure_item$w_f) <- "Food item budget share of total expenditure"
+
+# Collapse budget share by nuts2 and item
+nuts2_budget_shares <- food_expenditure_item %>%
+  group_by(nuts2, code) %>%
+  summarise(w_f = mean(w_f, na.rm = TRUE), region = first(region), .groups = "drop")
+
+nuts2_budget_shares <- mg(nuts2_budget_shares,up0, key=c("code"), drop_merge = TRUE)
+nuts2_budget_shares <- mg(nuts2_budget_shares,up_r, key=c("code", "nuts2"), drop_merge = TRUE)
+
+
+# Compute SPI food at regional level
+nuts2_budget_shares <- nuts2_budget_shares %>%
+  mutate(inv_spi_food = w_f * (up0 / up_r))
+
+spi_food_nuts2 <-  nuts2_budget_shares %>%
+  group_by(nuts2) %>%
+  summarise(
+    inv_spi_food = sum(inv_spi_food, na.rm = TRUE),
+    region = first(region),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    spi_food = 1 / inv_spi_food,  # Compute SPI food
+  )
+
+skim(spi_food_nuts2$spi_food)
+
+# Generate summary table for counties
+nuts2_summary <- spi_food_nuts2 %>%
+  group_by(nuts2) %>%
+  summarise(
+    mean_spi_food = mean(spi_food, na.rm = TRUE),
+  )
+print(nuts2_summary)
+
+saveRDS(spi_food_nuts2, file.path(data_temp, "spi_food_nuts2.rds"))
+
+### Food component of full coverage index (hh level)
+
+#Load food item data 
+food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
+  rename(foodq = cons_q) %>%
+  mutate(up = foodexp / foodq)  # Compute mean price at household level
+
+# Compute mean price at NATIONAL level
+up0 <- food_expenditure_item %>%
+  group_by(code) %>%
+  summarise(up0 = mean(up, na.rm = TRUE), .groups = "drop")
+
+# Load household expenditure data
+ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
+
+# Merge expenditure data (`m:1 hhid`)
+food_expenditure_item <- mg(food_expenditure_item , ca_nominal_t2, key=c("hhid"), drop_merge = TRUE) 
+
+# Compute food budget share
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(w_f = foodexp / mpcet)
+
+var_label(food_expenditure_item$w_f) <- "Food item budget share of total expenditure"
+
+# Merge price data (up0)
+food_expenditure_item <- mg(food_expenditure_item, up0, key=c("code"), drop_merge = TRUE)
+
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(inv_spi_food_full = w_f * (up0 / up))
+
+# Collapse food components to household level
+spi_food_full <- food_expenditure_item %>%
+  group_by(hhid) %>%
+  summarise(inv_spi_food_full = sum(inv_spi_food_full, na.rm = TRUE),
+            region = first(region),
+            nuts2 = first(nuts2), .groups = "drop") %>%
+  mutate(spi_food_full = 1 / inv_spi_food_full)  # Compute SPI food full
+
+var_label(spi_food_full$spi_food_full) <- "SPI food at household level"
+
+write_rds(spi_food_full, file.path(data_temp, "spi_food_full.rds"), compress = "gz")
+
+
+
+# Non Food Component of full coverage index
+# INDIRECT METHOD 
+
+#Load data
+ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds")) 
+kcal <- readRDS(file.path(data_temp, "kcal.rds"))
+
+ca_nominal_t2 <- ca_nominal_t2%>%
+  select(hhid, quarter, starts_with("mpce"), hhsize, region, nuts2)
+
+w_z_data <- mg(ca_nominal_t2, kcal, key=c("hhid")) %>%
+  filter(merge==3) %>%
+  select(-merge) 
+
+w_z_data <- w_z_data %>% 
+  arrange(mpcet)  %>%
+  mutate(mpcet_dec = ntile(mpcet, 10)) 
+
+w_z_data <- w_z_data %>% 
+  filter(mpcet_dec %in% c(1, 2, 3)) %>%
+  summarise(
+    mpcet_food = sum(mpcet_food, na.rm = TRUE),
+    mpcet = sum(mpcet, na.rm = TRUE)
+  ) %>%
+  mutate(w_z = mpcet_food / mpcet)
+
+w_z_value <- mean(w_z_data$w_z, na.rm = TRUE)
+cat("w_z is:", w_z_value, "\n")
+
+w_z_data <- w_z_data %>%
+  mutate(id_w = 1)  
+
+write_rds(w_z_data, file.path(data_temp, "w_z.rds"), compress = "gz")
+
+
+#  Compute spi_implicit - ratio of poverty lines and avg PL (UB)
+
+nuts2_deflators <- readRDS(file.path(data_temp, "poverty_line_nominal_nuts2.rds"))
+spi_implicit <- nuts2_deflators %>%
+  mutate(spi_implicit = ubpl / mean(ubpl, na.rm = TRUE))
+
+write_rds(spi_implicit, file.path(data_temp, "spi_implicit.rds"), compress = "gz")
+
+
+
+# Compute non food component for indirect method (spi_nfood)
+spi_food_nuts2 <- readRDS(file.path(data_temp, "spi_food_nuts2.rds")) %>%
+  mutate(id_w = 1)  
+w_z <- readRDS(file.path(data_temp, "w_z.rds"))
+spi_implicit <- readRDS(file.path(data_temp, "spi_implicit.rds"))
+
+spi_food_nuts2 <- mg(spi_food_nuts2, w_z, key = c("id_w"), drop_merge = TRUE) 
+
+spi_food_nuts2 <- mg(spi_food_nuts2, spi_implicit, key = c("nuts2"), drop_merge = TRUE)
+
+spi_nfood_i <- spi_food_nuts2 %>%
+  mutate(inv_spi_nfood = (1 / (1 - w_z)) * spi_implicit - (w_z / (1 - w_z)) * spi_food)
+
+write_rds(spi_nfood_i, file.path(data_temp, "spi_nfood_i.rds"), compress = "gz")
+
+
+# SPI full_coverage (indirect method) - food component at hh level
+
+spi_full <- readRDS(file.path(data_temp, "spi_food_full.rds"))
+
+spi_nfood_i <- readRDS(file.path(data_temp, "spi_nfood_i.rds"))
+spi_full <- mg(spi_full, spi_nfood_i, key = "nuts2",drop_merge = TRUE)
+
+
+# Compute full coverage indices
+spi_full <- spi_full %>%
+  mutate(
+    spi_full_indirect = 1 / (inv_spi_food_full + (1 - w_z) * (1 / inv_spi_nfood)),
+  )
+
+# Verify computed variables
+summary(spi_full$spi_full_indirect)
+
+# Keep only relevant columns
+spi_full <- spi_full %>%
+  select(hhid, nuts2, w_z, starts_with("inv_"), starts_with("spi_full"))
+
+# Reorder columns
+spi_full <- spi_full %>%
+  relocate(hhid, nuts2, w_z, starts_with("inv_"), starts_with("spi_full"))
+
+# Save the cleaned dataset
+write_rds(spi_full, file.path(data_temp, "spi_full.rds"), compress = "gz")
+
+
+## 2.3 Consolidation of estimated spatial price deflators ----
+
+# Bring all indices together 
+# Load the Paasche extended dataset
+paasche_extended <- readRDS(file.path(data_temp, "paasche_extended.rds"))
+
+# Merge with spi_food_full
+spi_food_full <- readRDS(file.path(data_temp, "spi_food_full.rds"))
+paasche_extended <- mg(paasche_extended, spi_food_full, key = "hhid", drop_merge = TRUE)
+
+# Merge with spi_full
+spi_full <- readRDS(file.path(data_temp, "spi_full.rds"))
+paasche_extended <- mg(paasche_extended, spi_full, key = "hhid", drop_merge = TRUE) 
+
+# Merge with spi_full
+spi_full <- readRDS(file.path(data_temp, "spi_full.rds"))
+paasche_extended <- mg(paasche_extended, spi_full, key = "hhid", drop_merge = TRUE) 
+
+# Merge with hh_info
+weight <- readRDS(file.path(data_in, "hh_info.rds"))
+weight <- weight %>% select(hhid,popw,hhw)
+paasche_extended <- mg(paasche_extended, weight, key = "hhid", drop_merge = TRUE) 
+
+
+# Ensure numeric conversion
+paasche_extended <- paasche_extended %>%
+  mutate(
+    spi_food = as.numeric(unlist(spi_food)),
+    spi_food_rent = as.numeric(unlist(spi_food_rent))
+  )
+
+# Rename labels (for clarity in output)
+label_descriptions <- c(
+  "Paasche food - hh level",
+  "Extended Paasche (food+ rent) - hh level",
+  "Full coverage SPI - Food component",
+  "Full coverage SPI - Indirect method"
+)
+
+names(label_descriptions) <- c(
+  "spi_food", "spi_food_rent", 
+  "spi_food_full", "spi_full_indirect"
+)
+
+# Save the household level spatial price indexes
+write_rds(paasche_extended, file.path(data_out, "spi_all_hh.rds"), compress = "gz")
+
+# Display skim statistics equivalent: final quick look
+skim(paasche_extended$spi_food)
+skim(paasche_extended$spi_food_rent)
+skim(paasche_extended$spi_full_indirect)
+
+
+# Generate summary tables 
+# Collapse (mean) by NUTS2 and rescale
+table_nuts2 <- paasche_extended %>%
+  group_by(nuts2) %>%
+  summarise(
+    spi_food = weighted.mean(spi_food, popw, na.rm = TRUE),
+    spi_food_rent = weighted.mean(spi_food_rent, popw, na.rm = TRUE),
+    spi_full = weighted.mean(spi_full_indirect, popw, na.rm = TRUE)
+  ) %>%
+  mutate(
+    spi_food_r = spi_food / mean(spi_food, na.rm = TRUE),
+    spi_food_rent_r = spi_food_rent / mean(spi_food_rent, na.rm = TRUE),
+    spi_full_r = spi_full / mean(spi_full, na.rm = TRUE)
+  )
+# Display results
+print(table_nuts2)
+# Save the spatial price indexes at the Nuts2 level.
+write_rds(table_nuts2, file.path(data_out, "spi_all_nuts2.rds"), compress = "gz")
+
+# Collapse (mean) by macro region and rescale
+table_mregion <- paasche_extended %>%
+  group_by(mregion) %>%
+  summarise(
+    spi_food = weighted.mean(spi_food, popw, na.rm = TRUE),
+    spi_food_rent = weighted.mean(spi_food_rent, popw, na.rm = TRUE),
+    spi_full = weighted.mean(spi_full_indirect, popw, na.rm = TRUE)
+  ) %>%
+  mutate(
+    spi_food_r = spi_food / mean(spi_food, na.rm = TRUE),
+    spi_food_rent_r = spi_food_rent / mean(spi_food_rent, na.rm = TRUE),
+    spi_full_r = spi_full / mean(spi_full, na.rm = TRUE)
+  )
+# Display results
+print(table_mregion)
+# Save the spatial price indexes at the Nuts2 level.
+write_rds(table_mregion, file.path(data_out, "spi_all_mregion.rds"), compress = "gz")
+
+
+### 2.3.1 Saving and displaying table results with tinytable (optional) ---- 
+excel_path <- file.path(tables, "spi_R.xlsx")
+wb <- createWorkbook()
+
+# Write to Excel
+addWorksheet(wb, "NUTS2")
+spi_nuts2 <- labelled::remove_labels(table_nuts2)
+writeData(wb, sheet = "NUTS2", table_nuts2)
+addWorksheet(wb, "Macro region")
+writeData(wb, sheet = "Macro region", table_mregion)
+
+# Save the Excel file
+saveWorkbook(wb, file = excel_path, overwrite = TRUE)
+cat("Excel file saved at:", excel_path, "\n")
+
+## Table output using tinytable:
+
+# Extract label vector
+nuts2_labels <- val_labels(table_nuts2$nuts2)
+# Create named vector: name = label, value = number
+nuts2_label_map <- setNames(names(nuts2_labels), nuts2_labels)
+
+# Add new label column with code + label string
+# Round numeric columns to 3 digits
+spi_nuts2_rounded <- table_nuts2 %>%
+  select(nuts2, spi_food_r, spi_food_rent_r, spi_full_r) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)),
+         nuts2 = paste0(nuts2, ": ", nuts2_label_map[as.character(nuts2)]))
+cap<-"SPI by NUTS2"
+# Create the table
+cat("\nTable: SPI by Macro Region\n")
+spi_nuts2_table <- spi_nuts2_rounded %>%
+  tt(,caption=cap)
+spi_nuts2_table
+
+
+# Extract label vector
+mregion_labels <- val_labels(table_mregion$mregion)
+# Create named vector: name = label, value = number
+mregion_label_map <- setNames(names(mregion_labels), mregion_labels)
+
+# Add new label column with code + label string
+# Round numeric columns to 3 digits
+mregion_labels <- val_labels(table_mregion$mregion) #save vlabel
+spi_mregion_rounded <- table_mregion %>%
+  select(mregion,spi_food_r,	spi_food_rent_r,spi_full_r) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)),
+ mregion = paste0(mregion, ": ", mregion_label_map[as.character(mregion)]))
+
+cap2<-"SPI by Macro-region"
+# Create the table
+cat("\nTable: SPI by Macro Region\n")
+spi_mregion_table <- spi_mregion_rounded %>%
+  tt(,caption=cap2)
+spi_mregion_table

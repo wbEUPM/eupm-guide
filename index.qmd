@@ -1,3 +1,42 @@
-# Introduction {.unnumbered}
+# Introduction
 
-TODO
+This guide demonstrates the implementation of the approaches proposed in [@amendola2025], using the 2019 Poland Household Budget Survey (HBS) to illustrate the estimation of price deflators. The guideline is organized into two main sections:
+
+- **Section 1**: Construction of the consumption aggregate  
+- **Section 2**: Estimation of price deflators
+
+If a consumption aggregate is already available in the HBS, users may proceed directly to Section 2.
+
+Before beginning the analysis, we set up directories, load the required libraries, and source user-defined functions.
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+# Set working directory to project root (assumes pl-hbs.Rproj is opened)
+path <- "."
+
+# Define folder structure
+code <- file.path(path, "code")             # Functions created
+data_raw <- file.path(path, "data_raw")     # HBS raw data and auxiliary files (confidential)
+data_temp <- file.path(path, "data_temp")   # Intermediate files
+data_in <- file.path(path, "data_in")       # Output from Step 1 / Input for Step 2
+data_out <- file.path(path, "data_out")     # Final processed outputs
+tables <- file.path(path, "tables")         # Table outputs
+figures <- file.path(path, "figures")       # Maps and visualizations
+
+# Optional: Clean temp directory (commented out for safety)
+# list.files(data_temp, pattern = "*", full.names = TRUE) |> file.remove()
+
+# Load required packages (automatically installs missing ones)
+library(pacman)
+pacman::p_load(
+  dplyr, ggplot2, tidyr, readr, stringr, purrr,
+  Hmisc, haven, labelled, skimr, openxlsx, tidyverse,
+  broom, janitor, matrixStats, estimatr, modelsummary,
+  fastDummies, readxl, survey, knitr, tibble, car,
+  robustbase, bestNormalize, tinytable, pandoc
+)
+
+# Load custom functions
+source(file.path(code, "mg_function.R"))     # Merge function
+source(file.path(code, "outdetectR.R"))      # Outlier detection
+```
+

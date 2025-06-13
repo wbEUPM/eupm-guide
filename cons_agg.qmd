@@ -1,0 +1,381 @@
+# Creation of consumption aggregate ----
+
+# Input
+
+## "BR2019_Kat.dta"
+
+## "br2019_04.dta"
+
+## "BR2019_Roz.dta": diary data
+
+## "BR2019_01a_1.dta" :housing data
+
+# Temp
+
+## "ca_nominal_t.rds" CA w/o imputed rents
+
+# Output (to be used in Sec.2)
+
+## id.rds : HH information (location,etc)
+
+## "cpi.rds"
+
+## "ca_nominal_t2.rds"
+
+#1 Creation of consumption aggregate ---- \## 1.1 Prepares files that include supporting variables needed for welfare analysis.
+
+## 1.1 Preparation- creating files to prepare CA analysis ----
+
+## This part prepares files that include supporting variables needed for welfare analysis.
+
+### 1.1.1 HH level data (hhsize, location, quarter, etc.) from HH roster ----
+
+# Load and clean data
+
+raw_data \<- read_dta(file.path(data_raw, "BR2019_Kat.dta")) %\>% rename_all(tolower) %\>% transmute( hhid = nrg_lp, \# quarter quarter = ((as.numeric(mc) - 0.1) %/% 3) + 1, urban = as.integer(klm \< 6), #urban location = case_when( woj == 14 & urban == 1 \~ 1, urban == 1 \~ 2, TRUE \~ 3 ), \# location region = case_when( woj == 2 \~ 1, woj == 4 \~ 2, woj == 6 \~ 3, woj == 8 \~ 4, woj == 10 \~ 5, woj == 12 \~ 6, woj == 14 \~ 7, woj == 16 \~ 8, woj == 18 \~ 9, woj == 20 \~ 10, woj == 22 \~ 11, woj == 24 \~ 12, woj == 26 \~ 13, woj == 28 \~ 14, woj == 30 \~ 15, woj == 32 \~ 16 ), nuts2 = if_else(location == 1, 34, region), mregion = case_when( woj %in% c(10, 14, 34) \~ 1, woj %in% c(12, 24) \~ 2, woj %in% c(6, 18, 26, 20) \~ 3, woj %in% c(30, 32, 8) \~ 4, woj %in% c(2, 16) \~ 5, woj %in% c(4, 28, 22) \~ 6 ), hhsize = los, weight_orig = mn, popw = mn \* hhsize / 4, hhw = weight_orig / 4, psu = NA_real\_ )
+
+# Apply labels
+
+raw_data \<- raw_data %\>% set_value_labels( urban = c("Rural" = 0, "Urban" = 1), location = c("Vojevodship containing capital" = 1, "Other urban" = 2, "Rural" = 3), region = c( "dolnoslaskie" = 1, "kujawsko-pomorskie" = 2, "lubelskie" = 3, "lubuskie" = 4, "lodzkie" = 5, "malopolskie" = 6, "mazowieckie" = 7, "opolskie" = 8, "podkarpackie" = 9, "podlaskie" = 10, "pomorskie" = 11, "slaskie" = 12, "swietokrzyskie" = 13, "warminsko-mazurskie" = 14, "wielkopolskie" = 15, "zachodniopomorskie" = 16 ), nuts2 = c( "dolnoslaskie" = 1, "kujawsko-pomorskie" = 2, "lubelskie" = 3, "lubuskie" = 4, "lodzkie" = 5, "malopolskie" = 6, "mazowieckie" = 7, "opolskie" = 8, "podkarpackie" = 9, "podlaskie" = 10, "pomorskie" = 11, "slaskie" = 12, "swietokrzyskie" = 13, "warminsko-mazurskie" = 14, "wielkopolskie" = 15, "zachodniopomorskie" = 16, "Warsaw metro" = 34 ), mregion = c( "Centralny (Central)" = 1, "Południowy (Southern)" = 2, "Wschodni (Eastern)" = 3, "Północno-Zachodni (North-Western)" = 4, "Południowo-Zachodni (South-Western)" = 5, "Północny (Northern)" = 6 ) ) %\>% set_variable_labels( urban = "Area of residence", region = "Region (Voivodeship)", mregion = "NUTS 1 macroregion", location = "Warsaw metro/Urban/Rural", nuts2 = "NUTS-2 region ID", popw = "Population weight", hhw = "HH weight" )
+
+# Validate uniqueness
+
+stopifnot(!anyDuplicated(raw_data\[, c("hhid", "quarter")\])) hh_info \<- raw_data
+
+# Save the cleaned data
+
+write_rds(hh_info, file.path(data_in, "hh_info.rds"), compress = "gz")
+
+### 1.1.2 Quarterly CPI data To prepare -for within-the-year inflation adjustment ----
+
+# Inflation adjustment preparation
+
+# IMF Quaterly CPI (https://data.imf.org/regular.aspx?key=61545861) obtained by the ECA WB team then.
+
+cpi \<- tribble( \~year, \~quarter, \~cpi, 2019, 1, 112.366143464867, 2019, 2, 114.273140677717, 2019, 3, 114.595863282969, 2019, 4, 115.211970074813 ) %\>% mutate(cpi = cpi / mean(cpi))
+
+var_label(cpi\$cpi) \<- "Inflation adjustment within year(1=year ave)"
+
+# Save CPI data
+
+write_rds(cpi, file.path(data_in, "cpi.rds"), compress = "gz")
+
+## 1.2 Creation of consumption aggregate without imputed rents ----
+
+## 1.2.1 Sub-aggregates of consumption aggregate: food, nfnd, rent ----
+
+### 1.2.1.0 Prep ----
+
+# Load and Prepare Diary Data
+
+diary \<- read_dta(file.path(data_raw, "BR2019_Roz.dta")) %\>% rename_all(tolower) %\>% rename(hhid = nrg_lp) %\>% mutate(code = r1)
+
+# Load item description files and merge
+
+desc_from_diary \<- read_dta(file.path(data_raw, "desc_from_diary.dta")) pol_codes15 \<- read_dta(file.path(data_raw, "pol_codes15.dta")) %\>% mutate(r1 = as.character(r1)) desc_2digit \<- read_dta(file.path(data_raw, "desc_from_diary_2digit.dta")) %\>% mutate(code2 = as.character(code2))
+
+diary \<- diary %\>% mg(desc_from_diary, key = "code") %\>% filter(merge != 2) %\>% select(-merge) %\>% mutate(r1 = sprintf("%06.0f", as.numeric(r1))) %\>% mutate(r1 = as.character(r1)) %\>% mg(pol_codes15, key = "r1") %\>% filter(merge == 3) %\>% select(-merge) %\>% mutate(code2 = str_replace(div_s, "\_1", ""), code2 = ifelse(code2 == "8", "08", code2)) %\>% mutate(code2 = as.character(code2)) %\>% mg(desc_2digit, key = "code2") %\>% select(-merge)
+
+# Variable label for 2-digit item code
+
+diary$code2 <- as.numeric(diary$code2) diary$code2 <- labelled(diary$code2, labels = c( "Food and non-alcohol beverage" = 1, "ALCOHOLIC BEVERAGES, TOBACCO PRODUCTS AND DRUGS" = 2, "CLOTHING AND SHOES" = 3, "USE OF APARTMENT OR HOUSE AND ENERGY CARRIERS" = 4, "APARTMENT FURNISHING AND HOUSEHOLD MANAGEMENT" = 5, "HEALTH" = 6, "TRANSPORT" = 7, "CONTACT" = 8, "RECREATION AND CULTURE" = 9, "EDUCATION" = 10, "RESTAURANTS AND HOTELS" = 11, "OTHER EXPENDITURE ON GOODS AND SERVICES" = 12, "OTHER EXPENSES" = 13, "TAXES AND OTHER FEES" = 14, "CAPITAL DISBURSEMENTS (IN KIND)" = 15, "FINANCIAL EXPENSES" = 16, "CURRENT EXPENSES RELATED TO FARMING" = 17, "INVESTMENT EXPENSES FOR FARM" = 18 )) var_label(diary$code2) <- "2 digit item code"
+var_label(diary$code) \<- "Item code" var_label(diary\$hhid) \<- "Household ID"
+
+diary \<- diary %\>% mutate(div_s1 = substr(as.character(r1), 1, 2))
+
+### 1.2.1.1 Food item ----
+
+#Keep quantity (r4) and expenditure (r5) only for food items bought or obtained #from non-purchased sources. food_item \<- diary %\>% filter(as.numeric(code) \<= 29999, r5 \> 0, r4 \> 0) %\>% mutate(r4_gr = case_when( unit == 1 \~ r4 \* 1000, unit == 2 \~ r4 \* 1000, unit == 3 \~ r4 \* 30, TRUE \~ NA_real\_ ), cons = r5, cons_q = r4_gr) %\>% mg(hh_info, key = "hhid") %\>% select(-merge) var_label(food_item$cons_q) <- "Quantity (gram/month/household)"
+var_label(food_item$cons) \<- "Expenditure (PLN/month/household)"
+
+#Keep variables necessary. food_item \<- food_item %\>% select(hhid, quarter, urban, location, region, nuts2, mregion, hhw, popw, hhsize, code, code2, description, cons_q, cons)
+
+# Save Food Item Data
+
+write_rds(food_item, file.path(data_in, "food_item.rds"), compress = "gz")
+
+### 1.2.1.2 Nonfood items ----
+
+# Var r5 includes both inkind and monetary goods and adjusted to yearly
+
+ca_data \<- diary %\>% rename(s = r5) %\>% mutate(s = s \* 12)
+
+# Durables have variable names ending with \_1
+
+ca_data \<- ca_data %\>% group_by(hhid, div_s) %\>% summarise(s = sum(s, na.rm = TRUE), .groups = "drop") %\>% pivot_wider(names_from = div_s, values_from = s, names_prefix = "s", values_fill = 0)
+
+#### 1.2.1.3 Rent paid----
+
+# Renaming rent paid variable
+
+ca_data \<- ca_data %\>% rename(ca_rent = s04_1)
+
+# Education var (s10) is adjusted with 0.75 to annualize and adjust and rename
+
+# other non-food variables
+
+ca_data \<- ca_data %\>% mutate(s10 = s10 \* 0.75) %\>% rename(cons1 = s01, cons2 = s02, cons3 = s03, cons4 = s04, cons5 = s05, cons6 = s06, cons7 = s07, cons8 = s08, cons9 = s09, cons10 = s10, cons11 = s11, cons12 = s12) %\>% mutate( ca_durables = rowSums(across(c(s05_1, s06_1, s07_1, s08_1, s09_1, s12_1)), na.rm = TRUE), ca_nfnd = rowSums(across(c(cons2, cons3, cons4, cons5, cons7, cons8, cons9, cons10, cons11, cons12)), na.rm = TRUE) ) %\>% rename(ca_food = cons1)
+
+#Add variable labels var_labels \<- list( ca_nfnd = "HH exp: non-food nondurables (PLN/yearly/household)", ca_food = "HH exp: food expenditure (PLN/yearly/household)", ca_rent = "HH exp: rents paid (PLN/yearly/household)", cons2 = "Alchool beverage, tabacco products and drugs", cons3 = "Clothing and footwear", cons4 = "Housing, water, electricity, gas and other fuels", cons5 = "Furnishings, household equipment and routine household maintenance", cons6 = "Health", cons7 = "Transport", cons8 = "Information and communication", cons9 = "Recreation, sport and culture", cons10 = "Education", cons11 = "Hotels, cafes and restaurants", cons12 = "Personal care, social protection and miscellaneous goods and services" )
+
+var_label(ca_data) \<- var_labels
+
+# Merge with CPI ID
+
+ca_data \<- ca_data %\>% mg(hh_info, key = "hhid") %\>% select(-merge) %\>% mg(cpi, key = "quarter") %\>% select(-merge)
+
+# Calculate temp. deflated expenditures and Shares
+
+ca_data \<- ca_data %\>% mutate( #For now, let's define total consumption without ca_durables. Revisit this later. ca_nominal = rowSums(across(c(ca_food, ca_nfnd, ca_rent)), na.rm = TRUE), \# Budget shares w_food = ca_food / ca_nominal, w_nfnd = ca_nfnd / ca_nominal, w_rent = ca_rent / ca_nominal, \# Monthly per capita consumption mpcet = ca_nominal / hhsize / 12 / cpi, mpcet_food = ca_food / hhsize / 12 / cpi, mpcet_nfnd = ca_nfnd / hhsize / 12 / cpi, mpcet_rent = ca_rent / hhsize / 12 / cpi)%\>% mutate(renter = ca_rent \> 0 )
+
+#Budget share table ca_data %\>% group_by(region) %\>% summarise(across(c(w_food, w_nfnd, w_rent), \~ weighted.mean(.x, popw, na.rm = TRUE)))
+
+#Add variable labels var_label(ca_data$w_food) <-"Budget share:food"
+var_label(ca_data$w_nfnd) \<-"Budget share:non-food nondurables" var_label(ca_data$w_rent) <-"Budget share:rent paid"
+var_label(ca_data$mpcet) \<- "HH exp temp. deflated (PLN/month/per capita)" var_label(ca_data$mpcet_food) <- "HH exp:food temp. deflated (PLN/month/per capita)"
+var_label(ca_data$mpcet_nfnd) \<- "HH exp:non-food nondurables temp. deflated (PLN/month/per capita)" var_label(ca_data\$mpcet_rent) \<- "HH exp:rent paid temp. deflated (PLN/month/per capita)"
+
+#Temp. deflated expenditure table ca_data %\>% group_by(region) %\>% summarise(across(c(mpcet, mpcet_food, mpcet_nfnd, mpcet_rent), \~ weighted.mean(.x, popw, na.rm = TRUE)))
+
+#Keep and order necessary variable ca_data \<- ca_data %\>% select( hhid, quarter, urban, location, region, nuts2, mregion, popw, hhw, hhsize, cpi, starts_with("cons"), starts_with("ca\_"), starts_with("w\_"), starts_with("mpcet") )
+
+ca_nominal_t\<- ca_data write_rds(ca_data, file.path(data_temp, "ca_nominal_t.rds"), compress = "gz")
+
+## 1.3 Creation of consumption aggregate with imputed rents -----
+
+# Information on household assets was not used here, although it is generally
+
+# useful, because the module was administered to only half of the households.
+
+# This was tested but is not presented here due to space limitations. It can
+
+# be shared upon request.
+
+### 1.3.1 Data pre ----
+
+# Load housing data and merging with HH infor.,and CA files.
+
+housing_data \<- read_dta(file.path(data_raw, "BR2019_01a_1.dta")) %\>% rename_all(tolower) %\>% rename(hhid = nrg_lp)
+
+housing_data \<- housing_data %\>% mg(hh_info, key = "hhid") %\>% select(-merge) %\>% mg(ca_nominal_t, key = "hhid") %\>% select(-merge, ca_rent)
+
+# Check values of key variables, detect outliers of actual rent
+
+# Define renters (who paid rents, ca_rent1)
+
+housing_data \<- housing_data %\>% mutate(ca_rent1 = as.integer(ca_rent \> 0))
+
+# Show table of mean rent paid, share of renters and non-missing count by types.
+
+housing_data %\>% group_by(d5_3) %\>% summarise( mean_ca_rent = mean(ca_rent, na.rm = TRUE), mean_ca_rent1 = mean(ca_rent1, na.rm = TRUE), n_ca_rent = sum(!is.na(ca_rent)) )
+
+# Should use d5_3=6 Rental (rental, sublet): owner fee (remuneration) at market prices
+
+# Show the descriptive stats of rents paid.
+
+housing_data_renter \<- housing_data %\>% filter(d5_3 == 6)
+
+# Calculate monthly rent and imputed rent only for market price renters
+
+housing_data \<- housing_data %\>% mutate(rent = if_else(d5_3 == 6, ca_rent / 12, 0), renter=if_else(rent \> 0, 1L, 0L))
+
+# Descriptive statistics of rents paid for renters (var rent)
+
+housing_data %\>% filter(rent \> 0) %\>% skim(rent) prop.table(table(housing_data$renter[!is.na(housing_data$rent)\])) \* 100 describe(housing_data$rent[housing_data$rent \> 0\])
+
+#Histogram of monthly rent paid housing_data %\>% filter(rent \> 0) %\>% ggplot(aes(x = rent)) + geom_histogram(bins = 30, color="black", fill="skyblue") + labs(title = "Distribution of Rent paid among Renters", x = "Rent paid (monthly)", y = "Frequency")
+
+# Table: Rents paid by region
+
+housing_data %\>% filter(rent \> 0) %\>% group_by(region) %\>% summarise( mean_rent = mean(rent, na.rm = TRUE), median_rent = median(rent, na.rm = TRUE), min_rent = min(rent, na.rm = TRUE), max_rent = max(rent, na.rm = TRUE) )%\>% ungroup()
+
+# Table: Rents paid by macro-region (mregion)
+
+housing_data %\>% filter(rent \> 0) %\>% group_by(mregion) %\>% summarise( mean_rent = mean(rent, na.rm = TRUE), median_rent = median(rent, na.rm = TRUE), min_rent = min(rent, na.rm = TRUE), max_rent = max(rent, na.rm = TRUE) )%\>% ungroup()
+
+# Detect outliers in rent
+
+## The outdetect function detects outliders in the following steps:
+
+# 1. Applied outdetect() to rent using Yeo–Johnson transformation and robust Qn scale estimator.
+
+# 2. Observations with rounded z-scores ≥ 2.99 or ≤ –2.99 flagged as upper (2) or lower (1) outliers.
+
+# 3. Results (rent_z, rent_outlier) added to housing_data for filtering or review.
+
+rent_outlier \<- outdetect(housing_data\$rent) housing_data \<- housing_data %\>% bind_cols(rent_outlier %\>% rename( rent_z = z, rent_outlier = outlier ))
+
+# Summary table of outliers (0 = not outlier, 1 = lower, 2 = upper)
+
+housing_data %\>% tabyl(rent_outlier) %\>% adorn_pct_formatting(digits = 1)
+
+#List detected outliers housing_data %\>% filter(!is.na(rent), rent != 0, rent_outlier != 0) %\>% dplyr::count(rent) %\>% arrange(rent)
+
+housing_data %\>% filter(rent_outlier != 0 & !is.na(rent)) %\>% mutate( z = round(rent_z, 2), rank = rank(rent, ties.method = "min") ) %\>% arrange(rent) %\>% select(rent, z, rent_outlier, rank)
+
+# Assess the number of renters in urban and rural
+
+tab \<- table(housing_data$renter, housing_data$urban) colnames(tab) \<- c("Rural", "Urban") \# if 0 = rural, 1 = urban rownames(tab) \<- c("Non-renter", "Renter") \# adjust if needed prop_tab \<- round(prop.table(tab, 2) \* 100, 1) print(prop_tab) #Do not observe severe selection by urban and rural.
+
+# Compare renters and non-renters
+
+housing_data \<- housing_data %\>% mutate( renter100 = renter \* 100, nonrenter100 = (1 - renter) \* 100, n_renter = if_else(renter == 1, 1, NA_real\_), n_nonrenter = if_else(renter == 0, 1, NA_real\_) )
+
+# Table xx: Count and distribution of renters and non-renters and mean rent paid across macroregions (unweighted)
+
+housing_data %\>% group_by(mregion) %\>% summarise( n = n(), n_nonrenter = sum(n_nonrenter, na.rm = TRUE), n_renter = sum(n_renter, na.rm = TRUE), mean_nonrenter100 = mean(nonrenter100, na.rm = TRUE), mean_renter100 = mean(renter100, na.rm = TRUE), mean_rent = mean(rent, na.rm = TRUE), .groups = "drop" )
+
+# Table xx: Count and distribution of renters and non-renters and mean rent paid across urban/rural (unweighted)
+
+housing_data %\>% group_by(urban) %\>% summarise( n = n(), n_nonrenter = sum(n_nonrenter, na.rm = TRUE), n_renter = sum(n_renter, na.rm = TRUE), mean_nonrenter100 = mean(nonrenter100, na.rm = TRUE), mean_renter100 = mean(renter100, na.rm = TRUE), mean_rent = mean(rent, na.rm = TRUE), .groups = "drop" )
+
+### 1.3.2 Hedonic model analysis ----
+
+#### 1.3.2.1 Hedonic model: dependent variable ----
+
+# Excluding extreme observations observed above helps minimize bias in coefficients.
+
+housing_data \<- housing_data %\>% mutate( rent = if_else(rent_outlier!=0, NA_real\_, rent), lnrent = if_else(rent \> 0, log(rent), NA_real\_) )
+
+#Descriptive stat of ln rent paid skim(housing_data\$lnrent)
+
+#### 1.3.2.2 Hedonic model: regressors ----
+
+#Processing and adding housing variables housing_data \<- housing_data %\>% \# Type of dwelling unit mutate( house = factor(if_else(d5_4 == 0, 1L, 0L), levels = c(0, 1), labels = c("apt", "house")) \# 1 = house/villa ) %\>% \# Built year (dummy vars) mutate(built_yr = d5_1) %\>% #Area mutate( area_total = d5_8, \# Total apartment area area = d5_9 \# Area occupied by household ) %\>% \# Number of rooms mutate(nroom = d5_10) %\>% \# Kitchen dummy mutate(kitchen = as.integer(d5_11 == 1)) %\>% \# AC dummy mutate(ac = as.integer(d5_12 == 1)) %\>% #Water supply mutate( water1 = as.integer(d5_13_1 == 1), water2 = as.integer(d5_13_2 == 1), water3 = as.integer(d5_13_3 == 1) ) %\>% \# Toilet (creating dummies later if needed) mutate(toilet = d5_15) %\>% #Heating: recode 3–5 → 4 ("other") mutate( heat = case_when(d5_18 %in% 3:5 \~ 4L, TRUE \~ d5_18) ) %\>% \# Gas connection mutate(gas = d5_19) %\>% \# Create dummies dummy_cols(select_columns = c("heat", "gas", "built_yr"), remove_selected_columns = TRUE) %\>% rename_with(\~ gsub("heat\_", "heat", .x), starts_with("heat\_")) %\>% rename_with(\~ gsub("gas\_", "gas", .x), starts_with("gas\_")) %\>% rename_with(\~ gsub("built_yr\_", "built_yr", .x), starts_with("built_yr\_"))
+
+#Summary statistics pc_vars \<- grep("\^pc\\d+\$", names(housing_data), value = TRUE) \# Final list of regressors regressors \<- c("house", "area", "nroom", "heat1", "heat2", "gas1", "gas2", "built_yr2", "built_yr3", "built_yr4", "built_yr5", "built_yr6", pc_vars) regressors \<- intersect(regressors, names(housing_data)) describe(housing_data\[regressors\])
+
+# Table xx
+
+vars \<- c("area", "nroom", "heat1", "heat2", "gas1", "gas2", "built_yr2", "built_yr3", "built_yr4", "built_yr5", "built_yr6")
+
+# Comparison by renter vs non-renter
+
+housing_data %\>% group_by(renter) %\>% summarise(across(all_of(vars), \~ weighted.mean(.x, w = hhw, na.rm = TRUE))) %\>% mutate(across(everything(), \~ round(.x, 4)))
+
+# Comparison by urban vs rural
+
+housing_data %\>% group_by(urban) %\>% summarise(across(all_of(vars), \~ weighted.mean(.x, w = hhw, na.rm = TRUE))) %\>% mutate(across(everything(), \~ round(.x, 4)))
+
+#### 1.3.2.3 Hedonic Regressions ------------------------------------------------------------------
+
+vars \<- c("area", "nroom", "heat1", "heat2", "gas1", "gas2", "built_yr2", "built_yr3", "built_yr4", "built_yr5", "built_yr6", pc_vars, "hhsize", "urban")
+
+#Main models fmla_m1 \<- as.formula(paste("lnrent \~", paste(c(vars, "factor(mregion)"), collapse = " + "))) fmla_m2 \<- as.formula(paste("lnrent \~", paste(c(vars, "factor(region)"), collapse = " + ")))
+
+# Define sample1 after m1 using the e(sample) logic
+
+data_m1 \<- model.frame(fmla_m1, data = housing_data) sample1 \<- rownames(housing_data) %in% rownames(data_m1) m1 \<- lm_robust(fmla_m1, data = housing_data, weights = hhw, se_type = "HC1") m2 \<- lm_robust(fmla_m2, data = housing_data, weights = hhw, se_type = "HC1")
+
+model_list \<- list(m1 = m1, m2 = m2)
+
+# Refit as lm for AIC/BIC
+
+ols_list \<- list( m1 = lm(fmla_m1, data = housing_data, weights = hhw), m2 = lm(fmla_m2, data = housing_data, weights = hhw) )
+
+# Export model summary to CSV with stars, SEs, AIC/BIC, and N
+
+regtbl\<-modelsummary(model_list, fmt = 4, estimate = "{estimate}{stars}", statistic = "({std.error})", gof_map = data.frame( raw = c("r.squared", "adj.r.squared"), clean = c("R²", "Adj. R²"), fmt = c(3, 3) ), add_rows = tibble::tibble( term = c("N", "AIC", "BIC"), m1 = c(m1$nobs, AIC(ols_list$m1), BIC(ols_list$m1)),
+               m2 = c(m2$nobs, AIC(ols_list$m2), BIC(ols_list$m2)) ), output = "tables/hedonic.docx" ) \# Print to console print(regtbl)
+
+#The second model with region nummy vars is selected with smaller AIC and BIC and larger R-sq.
+
+#### 1.3.2.4 Predicting rent for owners using the final model ----
+
+#Predict values from the model (region dummies + all services) housing_data \<- housing_data %\>% mutate( #Yhat xb = predict(m2, newdata = .), #Residual e = if_else(!is.na(lnrent), lnrent - xb, NA_real\_), #Simple prediction =Exponent of Yhat irent = exp(xb), #Exponent of residual expe = exp(e), #No of observations number = row_number() )
+
+#Duan's estimator mexpe \<- mean(housing_data\$expe, na.rm = TRUE) housing_data \<- housing_data %\>% mutate(irent_duan = mexpe \* irent)
+
+# Summary table of actual and imputed rents by renter
+
+housing_data %\>% group_by(renter) %\>% summarise( n = sum(!is.na(renter)), mean_number = weighted.mean(number, hhw, na.rm = TRUE), mean_rent = weighted.mean(rent, hhw, na.rm = TRUE), mean_irent_duan = weighted.mean(irent_duan, hhw, na.rm = TRUE), mean_irent = weighted.mean(irent, hhw, na.rm = TRUE), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print() housing_data \<- housing_data %\>% select(-xb, -e, -expe)
+
+# The result fro Duan's estimator is to be used (Duan, 1983)
+
+# Compare actual rents for renters with predicted rents for owners
+
+renter_res \<- housing_data %\>% filter(renter == 1) %\>% group_by(region) %\>% summarise( rent_paid = weighted.mean(rent, hhw, na.rm = TRUE), rent_imp_renter = weighted.mean(irent_duan, hhw, na.rm = TRUE), n_renter = sum(!is.na(rent)), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+owner_res \<- housing_data %\>% filter(renter == 0) %\>% group_by(region) %\>% summarise( rent_imp_owner = weighted.mean(irent_duan, hhw, na.rm = TRUE), n_owner = sum(!is.na(irent_duan)), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+# Combine
+
+combined_table \<- renter_res %\>% full_join(owner_res, by = "region") %\>% mutate(across(where(is.numeric), (x) round(x, 0))) print(combined_table)
+
+# Use actual rent for renters, imputed rent (Duan) for non-renters
+
+housing_data \<- housing_data %\>% mutate( exp_rent = case_when( renter != 1 \~ irent_duan, renter == 1 & is.na(rent) \~ irent_duan, TRUE \~ rent ) )
+
+skim(housing_data\$exp_rent)
+
+# Table XX: Actual rent compared to rent predicted via hedonic regression (/hh/month)
+
+# Region-level: renters
+
+housing_data %\>% filter(renter == 1) %\>% group_by(region) %\>% summarise( mean_rent = weighted.mean(rent, hhw, na.rm = TRUE), mean_irent_duan = weighted.mean(irent_duan, hhw, na.rm = TRUE), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+# Region-level: non-renters
+
+housing_data %\>% filter(renter == 0) %\>% group_by(region) %\>% summarise( mean_rent = weighted.mean(rent, hhw, na.rm = TRUE), mean_irent_duan = weighted.mean(irent_duan, hhw, na.rm = TRUE), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+# Macro-region: renters
+
+housing_data %\>% filter(renter == 1) %\>% group_by(mregion) %\>% summarise( mean_rent = weighted.mean(rent, hhw, na.rm = TRUE), mean_irent_duan = weighted.mean(irent_duan, hhw, na.rm = TRUE), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+# Macro-region: non-renters
+
+housing_data %\>% filter(renter == 0) %\>% group_by(mregion) %\>% summarise( mean_rent = weighted.mean(rent, hhw, na.rm = TRUE), mean_irent_duan = weighted.mean(irent_duan, hhw, na.rm = TRUE), .groups = "drop" ) %\>% mutate(across(where(is.numeric), (x) round(x, 0))) %\>% print()
+
+# Anualize and clean up
+
+housing_data \<- housing_data %\>% mutate( exp_rent = exp_rent \* 12, pce_rent = exp_rent / hhsize )
+
+var_label(housing_data$exp_rent) <- "actual and imputed rent expenditure (PLN/hh/year)"
+var_label(housing_data$pce_rent) \<- "actual and imputed rent expenditure (PLN/person/year)" var_label(housing_data$irent_duan) <- "Imputed rent duan's method"
+var_label(housing_data$irent) \<-"Imputed rent linear prediction"
+
+# Save the full data in the temp folder.
+
+write_rds(housing_data, file.path(data_temp, "rent_imp_full.rds"), compress = "gz")
+
+# Save the rent data to be merged with CA data.
+
+rent_imp \<- housing_data %\>% select(hhid, renter, exp_rent)
+
+## 1.4 Creation of consumption aggregate with imputed rents after imputation.----
+
+# Merge imputed rent with consumption aggregate data
+
+ca_nominal_t \<- readRDS(file.path(data_temp, "ca_nominal_t.rds")) ca_full \<- mg(ca_nominal_t, rent_imp, key="hhid")
+
+ca_full \<- ca_full %\>% select(-merge) %\>% rename( ca_rent_paid = ca_rent, \# Rename and keep ca_rent = exp_rent \# Update\
+) print(summary(ca_full\[c("ca_rent_paid", "ca_rent")\]))
+
+#update ca_nominal with imputed rents (ca_rent)\
+\# Compute total nominal expenditure ca_full \<- ca_full %\>% select(-ca_nominal) %\>% mutate(ca_nominal = ca_food + ca_nfnd + ca_rent)
+
+var_label(ca_full\$ca_nominal) \<- "HH exp inc. imputed rent (PLN/yearly/household)"
+
+#update w\_\* (budget shares) vars with imputed rents. ca_full \<- ca_full %\>% select(-starts_with("w\_")) %\>% mutate( w_food = ca_food / ca_nominal, w_nfnd = ca_nfnd / ca_nominal, w_rent = ca_rent / ca_nominal ) var_label(ca_full$w_food) <-"Budget share:food"
+var_label(ca_full$w_nfnd) \<-"Budget share:non-food nondurables" var_label(ca_full\$w_rent) \<-"Budget share:rent paid and imputed"
+
+#Tabulate updated budget shares by macro-regions. ca_full %\>% group_by(mregion) %\>% summarise( mean_w_food = weighted.mean(w_food, popw, na.rm = TRUE), mean_w_nfnd = weighted.mean(w_nfnd, popw, na.rm = TRUE), mean_w_rent = weighted.mean(w_rent, popw, na.rm = TRUE) )
+
+#Tabulate updated budget shares by regions. ca_full %\>% group_by(region) %\>% summarise( mean_w_food = weighted.mean(w_food, popw, na.rm = TRUE), mean_w_nfnd = weighted.mean(w_nfnd, popw, na.rm = TRUE), mean_w_rent = weighted.mean(w_rent, popw, na.rm = TRUE) )
+
+# Tabulate the same table above only for renters by macro-regions
+
+ca_full %\>% filter(renter == 1) %\>% group_by(mregion) %\>% summarise( mean_w_food = weighted.mean(w_food, popw, na.rm = TRUE), mean_w_nfnd = weighted.mean(w_nfnd, popw, na.rm = TRUE), mean_w_rent = weighted.mean(w_rent, popw, na.rm = TRUE) )
+
+# Tabulate the same table above only for renters by regions
+
+ca_full %\>% filter(renter == 1) %\>% group_by(region) %\>% summarise( mean_w_food = weighted.mean(w_food, popw, na.rm = TRUE), mean_w_nfnd = weighted.mean(w_nfnd, popw, na.rm = TRUE), mean_w_rent = weighted.mean(w_rent, popw, na.rm = TRUE) )
+
+# Keep rent paid var and update mpcet_rent.
+
+ca_full \<- ca_full %\>% rename(mpcet_rent_paid = mpcet_rent) %\>% mutate(mpcet_rent = ca_rent/hhsize/12/cpi ) #Add var labels var_label(ca_full$mpcet) <- "HH exp temp. deflated (PLN/month/per capita)"
+var_label(ca_full$mpcet_rent) \<- "HH exp:rent paid and imputed temp. deflated (PLN/month/per capita)"
+
+#Keep variables to be used in Section 2 ca_nominal_t2 \<- ca_full %\>% select( hhid, quarter, urban, location, region, nuts2, mregion, popw, hhw, hhsize, cpi, starts_with("cons"), starts_with("ca\_"), starts_with("w\_"), starts_with("mpcet") )
+
+#Save the CA data revised. write_rds(ca_nominal_t2, file.path(data_in, "ca_nominal_t2.rds"), compress = "gz")

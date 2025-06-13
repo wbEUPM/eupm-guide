@@ -2,11 +2,12 @@ project:
   type: book
 
 book:
-  title: "EUPM Practitioners Guide"
+  title: "EUPM Practitioners Guide - price ajdustment"
   # author: "TODO"
-  date: "2/12/2025"
+  date: "6/13/2025"
   chapters:
     - index.qmd
+    - cons_agg.qmd
     - price-adj.qmd
     #- intro.qmd
     #- data.qmd
