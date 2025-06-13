@@ -13,3 +13,4 @@ figures
 /_site/
 /_book/
 data/Ydump
+*.dta
