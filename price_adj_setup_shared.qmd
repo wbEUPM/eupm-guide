@@ -1,0 +1,25 @@
+```{r setup-shared, include=FALSE, message=FALSE, warning=FALSE}
+# Load required packages
+library(pacman)
+pacman::p_load(
+  dplyr, ggplot2, tidyr, readr, stringr, purrr,
+  Hmisc, haven, labelled, skimr, openxlsx, tidyverse,
+  broom, janitor, matrixStats, estimatr, modelsummary,
+  fastDummies, readxl, survey, knitr, tibble, car,
+  robustbase, bestNormalize, tinytable, pandoc
+)
+
+# Set paths
+path <- "."
+code <- file.path(path, "code")
+data_raw <- file.path(path, "data_raw")
+data_temp <- file.path(path, "data_temp")
+data_in <- file.path(path, "data_in")
+data_out <- file.path(path, "data_out")
+tables <- file.path(path, "tables")
+figures <- file.path(path, "figures")
+
+# Load custom functions
+source(file.path(code, "mg_function.R"))
+source(file.path(code, "outdetectR.R"))
+```

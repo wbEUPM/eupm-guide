@@ -1,14 +1,84 @@
-# Estimation of price deflators ----		
+```{r, child="price_adj_setup_shared.qmd"}
+```
 
-# Input (from Sec.1)
-## id.rds : HH information (location,etc)
-## "cpi.rds"
-## "ca_nominal_t2.rds"
+# Estimation of price deflators
 
-# 2.Estimation of price deflators	----
+## Introduction to this chapter
 
-## 2.1 Traditional Price deflator with extension: Paasche Index ----
+This chapter covers two approaches to estimate spatial deflators. The first approach is to use the Paasche price index. In this approach, we start calculating the food Paasche and the rent to extend the coverage of the price index without the price data in non-food expenditure.
 
+To illustrate how the food Paasche can be implemented using R, we use Poland 2019 HBS. Suppose we want to estimate the price deflator at the NUTS 2 (Regions, *regioy*) level in Poland.
+
+### Data sets used for the analysis 
+
+After getting the consumption aggregate data from the HBS data, the following processed data are used to estimate the price deflators. All data sets are saved as .RDS. Each of these data are explained below.
+
+```{r, echo = FALSE}
+# Processed output data sets saved in data_in:
+idata <- tribble(
+  ~File, ~Description,
+  "hh_info.rds", "HH information (location,etc)",
+  "cpi.rds", "Quarterly national price survey",
+  "ca_nominal_t2.rds", "Consumption aggregate data with paid and imputed rents"
+)
+# Auxiliary calorie table input data:
+auxiliary_idata <- tribble(
+  ~File, ~Description,
+  "kcal_conversion_factors.xlsx", "Prepared calorie table",
+)
+
+```
+```{r, echo = FALSE}
+kable(idata, caption = "Processed HBS data to be used in this chapter")
+```
+
+### Calorie Table Preparation 
+In addition to the data prepared from the HBS, a calorie conversion table is needed to convert food quantities consumed into calories. In this analysis, the author primarily used publicly available sources such as https://www.nutritionix.com/, though additional sources were also consulted. Given the country-specific nature of food consumption, input from local experts would be valuable in finalizing the calorie conversion table.
+
+The final conversion table in Excel is saved in folder data_in. 
+
+```{r, echo = FALSE}
+kable(auxiliary_idata, caption = "Processed HBS data to be used in this chapter")
+```
+
+
+
+
+## Traditional Price deflator with extension: Paasche Index
+
+We estimate the Paasche index using the HBS.  We start with the food Paasche and move to the food plus rent Paasche.
+
+### Food Paasche Index
+
+The food Paasche is defined as follow:
+
+$$
+P_h^{\text{food}} = \left( \sum_{j=1}^F w_j^h \left( \frac{p_j^0}{p_j^h} \right) \right)^{-1}
+$$ {#eq-fpaasche}
+
+where $w_j^h$ is the budget share for food item $j$ of household $h$, $F$ is the number of food items considered, and $p_j^h$ and $p_j^0$ are the corresponding market prices of item $j$ for household $h$ and for the reference household $0$, respectively.
+
+In this section, we calculate two versions of the food Paasche index. The first is the food-only index, and the second is the food plus rent price index, which will be further explained in Section 3.2.2 (to be update).
+
+
+### Food + Rent Paasche index
+
+To increasing the coverage of the deflator, an additional expenditure component, particularly housing expenses is added.  We consider the following index:
+
+$$
+P_h^{\text{(food+rent)}} = \left[ \sum_{j=1}^F w_h^j \frac{E[p_h^j]}{p_h^j} + w_h^{\text{rent}} \frac{E_0[x_h^{\text{rent}}]}{E_g[x_h^{\text{rent}}]} \right]^{-1}
+$$ {#eq-frpaasche}
+
+where $w_h^j = \frac{x_h^j}{x_h^{\text{food}} + x_h^{\text{rent}}}; w_h^{\text{rent}} = \frac{x_h^{\text{rent}}}{x_h^{\text{food}} + x_h^{\text{rent}}}$
+
+are the budget shares on food item *j* and on housing, respectively, and $E_g[x_h^{\text{rent}}]$ is the average rent for households belonging to group $g$ , while $E_0[x_h^{\text{rent}}]$ is the mean of the group-level rents $E_g[x_h^{\text{rent}}]$. Equation (@eq-frpaasche) is clearly an improvement, in terms of coverage, with respect to equation (@eq-fpaasche).
+
+The calculation of food + rent Paasche index is conducted in section xxx (tbu). 
+
+
+
+
+```{r}
 ### 2.1.1 Preparation of food expenditure data and calculation of food Paasche index ----
 # This code creates a dataset containing input for budget shares at hh level 
 # that are necessary for food Paasche and food+rent Paasche exteded indexes. 
@@ -908,3 +978,6 @@ cat("\nTable: SPI by Macro Region\n")
 spi_mregion_table <- spi_mregion_rounded %>%
   tt(,caption=cap2)
 spi_mregion_table
+```
+
+
