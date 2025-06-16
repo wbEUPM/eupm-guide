@@ -41,7 +41,7 @@ The final conversion table in Excel is saved in folder data_in.
 kable(auxiliary_idata, caption = "Processed HBS data to be used in this chapter")
 ```
 
-
+The table looks like: 
 
 
 ## Traditional Price deflator with extension: Paasche Index
