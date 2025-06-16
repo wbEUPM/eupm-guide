@@ -5,11 +5,44 @@
 
 ## Introduction to this chapter
 
-This chapter covers two approaches to estimate spatial deflators. The first approach is to use the Paasche price index. In this approach, we start calculating the food Paasche and the rent to extend the coverage of the price index without the price data in non-food expenditure.
+To demonstrate how the proposed deflators are estimated in R, we use the 2019 Poland Household Budget Survey (HBS). In this analysis, we aim to estimate spatial price deflators at the NUTS 2 level (regions, *województwa*), which is the lowest NUTS level available in the dataset.
 
-To illustrate how the food Paasche can be implemented using R, we use Poland 2019 HBS. Suppose we want to estimate the price deflator at the NUTS 2 (Regions, *regioy*) level in Poland.
+## Traditional Price deflator with extension: Paasche Index
+This section covers two approaches for estimating spatial deflators. The first approach uses the Paasche price index, beginning with the calculation of the food Paasche index and incorporating rent to extend the coverage to non-food expenditures, even in the absence of direct price data.
 
-### Data sets used for the analysis 
+### Conceptual Overview of the Paasche-Based Tradditional Approach
+The following sections present the construction of the food Paasche index and an extended version that incorporates rent to partially capture non-food price variation.
+
+
+#### Food Paasche Index
+
+The food Paasche is defined as follow:
+
+$$
+P_h^{\text{food}} = \left( \sum_{j=1}^F w_j^h \left( \frac{p_j^0}{p_j^h} \right) \right)^{-1}
+$$ {#eq-fpaasche}
+
+where $w_j^h$ is the budget share for food item $j$ of household $h$, $F$ is the number of food items considered, and $p_j^h$ and $p_j^0$ are the corresponding market prices of item $j$ for household $h$ and for the reference household $0$, respectively.
+
+
+#### Food + Rent Paasche index
+
+To increasing the coverage of the deflator, an additional expenditure component, particularly housing expenses is added.  We consider the following index:
+
+$$
+P_h^{\text{(food+rent)}} = \left[ \sum_{j=1}^F w_h^j \frac{E[p_h^j]}{p_h^j} + w_h^{\text{rent}} \frac{E_0[x_h^{\text{rent}}]}{E_g[x_h^{\text{rent}}]} \right]^{-1}
+$$ {#eq-frpaasche}
+
+where $w_h^j = \frac{x_h^j}{x_h^{\text{food}} + x_h^{\text{rent}}}; w_h^{\text{rent}} = \frac{x_h^{\text{rent}}}{x_h^{\text{food}} + x_h^{\text{rent}}}$
+
+are the budget shares on food item *j* and on housing, respectively, and $E_g[x_h^{\text{rent}}]$ is the average rent for households belonging to group $g$ , while $E_0[x_h^{\text{rent}}]$ is the mean of the group-level rents $E_g[x_h^{\text{rent}}]$. Equation (@eq-frpaasche) is clearly an improvement, in terms of coverage, with respect to equation (@eq-fpaasche).
+
+The calculation of food + rent Paasche index is conducted in section xxx (tbu). 
+
+
+
+
+### Data sets used for the analysis {#sec-dataused}
 
 After getting the consumption aggregate data from the HBS data, the following processed data are used to estimate the price deflators. All data sets are saved as .RDS. Each of these data are explained below.
 
@@ -28,61 +61,16 @@ auxiliary_idata <- tribble(
 )
 
 ```
+Table: {#tbl-idata} Processed HBS data to be used in this chapter
 ```{r, echo = FALSE}
-kable(idata, caption = "Processed HBS data to be used in this chapter")
+kable(idata)
 ```
 
-### Calorie Table Preparation 
-In addition to the data prepared from the HBS, a calorie conversion table is needed to convert food quantities consumed into calories. In this analysis, the author primarily used publicly available sources such as https://www.nutritionix.com/, though additional sources were also consulted. Given the country-specific nature of food consumption, input from local experts would be valuable in finalizing the calorie conversion table.
-
-The final conversion table in Excel is saved in folder data_in. 
-
-```{r, echo = FALSE}
-kable(auxiliary_idata, caption = "Processed HBS data to be used in this chapter")
-```
-
-The table looks like: 
-
-
-## Traditional Price deflator with extension: Paasche Index
-
-We estimate the Paasche index using the HBS.  We start with the food Paasche and move to the food plus rent Paasche.
-
-### Food Paasche Index
-
-The food Paasche is defined as follow:
-
-$$
-P_h^{\text{food}} = \left( \sum_{j=1}^F w_j^h \left( \frac{p_j^0}{p_j^h} \right) \right)^{-1}
-$$ {#eq-fpaasche}
-
-where $w_j^h$ is the budget share for food item $j$ of household $h$, $F$ is the number of food items considered, and $p_j^h$ and $p_j^0$ are the corresponding market prices of item $j$ for household $h$ and for the reference household $0$, respectively.
-
-In this section, we calculate two versions of the food Paasche index. The first is the food-only index, and the second is the food plus rent price index, which will be further explained in Section 3.2.2 (to be update).
-
-
-### Food + Rent Paasche index
-
-To increasing the coverage of the deflator, an additional expenditure component, particularly housing expenses is added.  We consider the following index:
-
-$$
-P_h^{\text{(food+rent)}} = \left[ \sum_{j=1}^F w_h^j \frac{E[p_h^j]}{p_h^j} + w_h^{\text{rent}} \frac{E_0[x_h^{\text{rent}}]}{E_g[x_h^{\text{rent}}]} \right]^{-1}
-$$ {#eq-frpaasche}
-
-where $w_h^j = \frac{x_h^j}{x_h^{\text{food}} + x_h^{\text{rent}}}; w_h^{\text{rent}} = \frac{x_h^{\text{rent}}}{x_h^{\text{food}} + x_h^{\text{rent}}}$
-
-are the budget shares on food item *j* and on housing, respectively, and $E_g[x_h^{\text{rent}}]$ is the average rent for households belonging to group $g$ , while $E_0[x_h^{\text{rent}}]$ is the mean of the group-level rents $E_g[x_h^{\text{rent}}]$. Equation (@eq-frpaasche) is clearly an improvement, in terms of coverage, with respect to equation (@eq-fpaasche).
-
-The calculation of food + rent Paasche index is conducted in section xxx (tbu). 
-
-
+### Preparation of food expenditure data and calculation of food Paasche index
+This code creates a dataset containing input for budget shares at hh level that are necessary for food Paasche and food+rent Paasche exteded indexes. 
 
 
 ```{r}
-### 2.1.1 Preparation of food expenditure data and calculation of food Paasche index ----
-# This code creates a dataset containing input for budget shares at hh level 
-# that are necessary for food Paasche and food+rent Paasche exteded indexes. 
-
 ### FOOD EXPENDITURE data ###
 
 # Load food item data
@@ -91,8 +79,6 @@ cpi <- readRDS(file.path(data_in, "cpi.rds"))
 
 #Add quarterly rebased CPI
 food<- mg(food_item,cpi,key=c("quarter"), drop_merge = TRUE)
-
-
 
 # Compute real food expenditure
 food <-  food %>%
@@ -115,8 +101,6 @@ food_expenditure <- food_expenditure_item %>%
             mregion = first(mregion))
 
 saveRDS(food_expenditure, file.path(data_temp, "food_expenditure.rds"))
-
-
 
 ### HOUSING EXPENDITURE ###
 
@@ -160,10 +144,16 @@ summary(budget_shares_input[, c("expenditure_hh_f", "expenditure_hh_fr", "expend
 #Save the budget shares file to be worked below. 
 write_rds(budget_shares_input, file.path(data_temp, "budget_shares_input.rds"), compress = "gz")
 
+```
 
-### 2.1.2 Getting the elements to get Paasche Indexes ----
 
-#### 2.1.2.1 Food ----
+The table looks like: 
+
+
+### Getting the elements to get Paasche Indexes 
+
+#### Food
+```{r}
 # Load food item data
 food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds"))
 
@@ -265,14 +255,6 @@ if (!all(dplyr::near(check2$check2, 1, tol = 0.01))) {
 food_expenditure_item <- food_expenditure_item %>%
   select(-check)
 
-
-# Check all values are numeric
-# food_expenditure_item <- food_expenditure_item %>%
-#   mutate(across(starts_with("inve_paasche"), ~ suppressWarnings(as.numeric(.))))
-# 
-# summary(food_expenditure_item$inve_paasche_food)
-
-
 # Aggregate by household
 food_file <- food_expenditure_item %>%
   group_by(hhid) %>%
@@ -290,9 +272,11 @@ summary(food_file[, c("inve_paasche_food","inve_paasche_food_fr", "inve_paasche_
                       "inve_paasche_food_fr_p50","w_f_f","w_f_fr")]) ## same as stata 
 
 write_rds(food_file, file.path(data_temp, "food_file.rds"), compress = "gz")
+```
 
 
-#### 2.1.2.2 Non-food (housing) ----
+#### Non-food (housing)
+```{r}
 # Load housing data
 housing_expenditure <- readRDS(file.path(data_temp, "housing_expenditure.rds")) %>%
   rename(rent_expenditure = rentexp)
@@ -326,10 +310,10 @@ rent_file <- housing_expenditure %>%
 label(rent_file$inve_paasche_rent_fr) <- "Rent input of extended paasche (food+rent)"
 
 write_rds(rent_file, file.path(data_temp, "rent_file.rds"), compress = "gz")
+```
 
-
-#### 2.1.2.3  Merging food and non-food(housing) expenditure datasets  ----
-
+#### Merging food and non-food(housing) expenditure datasets
+```{r}
 # Merge food and housing files
 paasche_extended <- mg(food_file, rent_file, key=c("hhid"), drop_merge = TRUE)
 
@@ -340,8 +324,11 @@ summary(paasche_extended$check_fr)
 stopifnot(all(round(paasche_extended$check_fr, 2) == 1))
 paasche_extended <- paasche_extended %>%
   select(-check_fr)
+```
 
-### 2.1.3 Calculation of Paasche price indexes ----
+### Calculation of Paasche price indexes
+
+```{r}
 #Calculation of Food SPI & Extended SPI: food + rent
 paasche_extended <- paasche_extended %>%
   mutate(spi_food = 1 / inve_paasche_food,
@@ -367,7 +354,11 @@ paasche_extended <- paasche_extended %>%
 
 write_rds(paasche_extended, file.path(data_temp, "paasche_extended.rds"), compress = "gz")
 
-#### 2.1.2.3 Tables for food and extended SPI
+```
+
+### Tables for food and extended SPI
+
+```{r}
 # Mean spi_food and spi_food_rent at the NUTS2 level
 nuts2_summary <- paasche_extended  %>%
   group_by(nuts2) %>%
@@ -389,11 +380,39 @@ mregion_summary <- paasche_extended  %>%
   )
 
 print(mregion_summary)
+```
+
+## Full coverage index
+
+### Theory 
+@amendola2024 and @amendola2025 proposed a novel strategy for generating a full coverage Paasche spatial deflator. The central result of their approach can be expressed as follows:
+
+$$
+P_h^{\text{(full coverage)}} = \left[ w_h^{\text{food}} \left( P_h^{\text{food}} \right)^{-1} + \left(1 - w_h^{\text{food}} \right) \left( P_h^{\text{nfood}} \right)^{-1} \right]^{-1} 
+$${#eq-full-coverage}
+
+where $w_h^{\text{food}}$ is the food budget share of household $h$, and $P_h^{\text{food}}$ is the household-level food Paasche index defined in @eq-fpaasche.
+
+$$
+P_h^{\text{nfood}} = \frac{1}{1 - w_z} \, \widetilde{\text{SPI}}_g - \frac{w_z}{1 - w_z} \, \text{SPI}_g^{\text{food}}
+\quad \label{#eq:ph-nfood}
+$$
+
+where ${SPI}_g^{food}$ is a Paasche spatial food price index for group $g$ – typically a district, province or region, $\widetilde{SPI_g} =  \frac{z_g}{E[z_g]}$ is an implicit deflator defined by the ratio between the group-level absolute poverty line $z_g$ and the average of the $G$ absolute poverty lines, and $w_z$ is the average food budget share of the bottom deciles of the distribution of per capita expenditure. The idea behind this method is that the ratio between absolute poverty lines and their national average can be interpreted as the ratio between the minimum expenditures needed to achieve a fixed minimum level of utility. The reference poverty lines must therefore be absolute, not relative, and must be correctly identified, that is, utility consistent.
 
 
-## 2.2 Full coverage index ----	
-### 2.2.1 Preparation: Food calorie conversion table ----
+### Calorie Table Preparation 
+In addition to the listed data sets in @tbl-idata, a calorie conversion table is needed to convert food quantities consumed into calories. In this analysis, the authors primarily used publicly available sources such as https://www.nutritionix.com/, though additional sources were also consulted. Given the country-specific nature of food consumption, input from local experts would be valuable in finalizing the calorie conversion table.
 
+The final conversion table in Excel is saved in folder data_in. 
+
+```{r, echo = FALSE}
+kable(auxiliary_idata, caption = "Processed HBS data to be used in this chapter")
+```
+
+
+### Preparation: Food calorie conversion table ----
+```{r}
 # Load food calorie conversion factor table in Excel
 kcal_conversion_factors <- read_excel(file.path(data_in,"kcal_conversion_factors.xlsx"))
 
@@ -494,10 +513,16 @@ skim(kcal)
 label(kcal$kcalpc) <- "Daily kilocalories consumed (per capita)"
 
 write_rds(kcal, file.path(data_temp, "kcal.rds"), compress = "gz")
+```
 
 
-###	2.2.2 Regional (Nuts2) Poverty Lines Estimation ----
-#####	2.2.2.1 CBN poverty lines: FPL
+###	Regional (Nuts2) Poverty Lines Estimation
+#### CBN poverty lines: FPL
+#### CBN poverty lines: FPL
+#### CBN poverty lines: non-food allowances
+
+
+```{r}
 ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
 
 ca_nominal_t2 <- ca_nominal_t2 %>%
@@ -537,11 +562,10 @@ for (m in nuts2_list) {
   nuts2_data <- nuts2_data%>%
     arrange(hhid) %>%
     mutate(mpcet_dec = ntile(mpcet, 10))
-  
-  
-  ####	2.2.2.1 CBN poverty lines: FPL ----
-  
-  # Food poverty line 
+
+####	2.2.2.1 CBN poverty lines: FPL ----
+
+    # Food poverty line 
   er <- 2200
   
   # Reference group for mean ukcal 
@@ -561,8 +585,7 @@ for (m in nuts2_list) {
   label(nuts2_data$fpl) <- "Food PL (PLN/person/month)"
   
   skim(nuts2_data$fpl)
-  
-  
+
   ### 2.2.2.2	CBN poverty lines: non-food allowances ----
   
   
@@ -637,10 +660,11 @@ overall_poverty <- bind_rows(lapply(nuts2_list, function(m) {
 #loop end here
 
 write_rds(overall_poverty, file.path(data_temp,"poverty_line_nominal_nuts2.rds"), compress = "gz")
+```
 
 
-
-###	2.2.3 Calculation of FULL COVERAGE Deflator ----
+###	Calculation of FULL COVERAGE Deflator
+```{r}
 #Compute SPI food (nuts2 level)
 food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
   rename(foodq = cons_q) %>%
@@ -830,10 +854,12 @@ spi_full <- spi_full %>%
 
 # Save the cleaned dataset
 write_rds(spi_full, file.path(data_temp, "spi_full.rds"), compress = "gz")
+```
 
 
-## 2.3 Consolidation of estimated spatial price deflators ----
+## Consolidation of estimated spatial price deflators ----
 
+```{r}
 # Bring all indices together 
 # Load the Paasche extended dataset
 paasche_extended <- readRDS(file.path(data_temp, "paasche_extended.rds"))
@@ -921,9 +947,11 @@ table_mregion <- paasche_extended %>%
 print(table_mregion)
 # Save the spatial price indexes at the Nuts2 level.
 write_rds(table_mregion, file.path(data_out, "spi_all_mregion.rds"), compress = "gz")
+```
 
 
-### 2.3.1 Saving and displaying table results with tinytable (optional) ---- 
+### Saving and displaying table results with tinytable (optional) ---- 
+```{r}
 excel_path <- file.path(tables, "spi_R.xlsx")
 wb <- createWorkbook()
 

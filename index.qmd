@@ -1,11 +1,11 @@
 # Introduction
 
-This guide demonstrates the implementation of the approaches proposed in [@amendola2025], using the 2019 Poland Household Budget Survey (HBS) to illustrate the estimation of price deflators. The guideline is organized into two main sections:
+This guide demonstrates the implementation of the approaches proposed in @amendola2025, using the 2019 Poland Household Budget Survey (HBS) to illustrate the estimation of price deflators. The guideline is organized into two main sections:
 
-- **Section 1**: Construction of the consumption aggregate  
-- **Section 2**: Estimation of price deflators
+- **[Section 1: Construction of the consumption aggregate](cons_agg.qmd)**  
+- **[Section 2: Estimation of price deflators](price-adj.qmd)**
 
-If a consumption aggregate is already available in the HBS, users may proceed directly to Section 2.
+If a consumption aggregate is already available in the HBS, users may proceed directly to [Section 2](price-adj).
 
 Before beginning the analysis, we set up directories, load the required libraries, and source user-defined functions.
 
