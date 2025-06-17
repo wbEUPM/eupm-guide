@@ -37,14 +37,10 @@ where $w_h^j = \frac{x_h^j}{x_h^{\text{food}} + x_h^{\text{rent}}}; w_h^{\text{r
 
 are the budget shares on food item *j* and on housing, respectively, and $E_g[x_h^{\text{rent}}]$ is the average rent for households belonging to group $g$ , while $E_0[x_h^{\text{rent}}]$ is the mean of the group-level rents $E_g[x_h^{\text{rent}}]$. Equation (@eq-frpaasche) is clearly an improvement, in terms of coverage, with respect to equation (@eq-fpaasche).
 
-The calculation of food + rent Paasche index is conducted in section xxx (tbu). 
-
-
-
 
 ### Data sets used for the analysis {#sec-dataused}
 
-After getting the consumption aggregate data from the HBS data, the following processed data are used to estimate the price deflators. All data sets are saved as .RDS. Each of these data are explained below.
+After constructing the consumption aggregate from the HBS data, the following processed datasets are used to estimate the price deflators. All datasets are saved in `.RDS` format. Each dataset is briefly described below.
 
 ```{r, echo = FALSE}
 # Processed output data sets saved in data_in:
@@ -54,17 +50,11 @@ idata <- tribble(
   "cpi.rds", "Quarterly national price survey",
   "ca_nominal_t2.rds", "Consumption aggregate data with paid and imputed rents"
 )
-# Auxiliary calorie table input data:
-auxiliary_idata <- tribble(
-  ~File, ~Description,
-  "kcal_conversion_factors.xlsx", "Prepared calorie table",
-)
+```
+```{r  tbl-idata, echo = FALSE}
+kable(idata, caption = "Processed HBS data to be used in this chapter")
+```
 
-```
-Table: {#tbl-idata} Processed HBS data to be used in this chapter
-```{r, echo = FALSE}
-kable(idata)
-```
 
 ### Preparation of food expenditure data and calculation of food Paasche index
 This code creates a dataset containing input for budget shares at hh level that are necessary for food Paasche and food+rent Paasche exteded indexes. 
@@ -73,9 +63,13 @@ This code creates a dataset containing input for budget shares at hh level that 
 ```{r}
 ### FOOD EXPENDITURE data ###
 
-# Load food item data
+# Load and browse food item data
 food_item <- readRDS(file.path(data_in, "food_item.rds"))
+glimpse(food_item)
+
+# Load and browse quarterly CPI data
 cpi <- readRDS(file.path(data_in, "cpi.rds"))
+glimpse(cpi)
 
 #Add quarterly rebased CPI
 food<- mg(food_item,cpi,key=c("quarter"), drop_merge = TRUE)
@@ -104,12 +98,15 @@ saveRDS(food_expenditure, file.path(data_temp, "food_expenditure.rds"))
 
 ### HOUSING EXPENDITURE ###
 
-# Load housing data
-housing_expenditure <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
-housing_expenditure <- housing_expenditure %>%
+# Load and browse consumption aggregate data with rents paid
+ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
+glimpse(ca_nominal_t2)
+housing_expenditure <- ca_nominal_t2 %>%
   select(hhid, quarter, ca_rent)
 
+# Load and browse household information data
 hh_info <- readRDS(file.path(data_in, "hh_info.rds"))
+glimpse(hh_info)
 
 # Merge datasets
 housing_expenditure <- mg(housing_expenditure,cpi,key=c("quarter"), drop_merge = TRUE)
@@ -147,10 +144,7 @@ write_rds(budget_shares_input, file.path(data_temp, "budget_shares_input.rds"), 
 ```
 
 
-The table looks like: 
-
-
-### Getting the elements to get Paasche Indexes 
+### Extracting the Elements for Paasche Index Calculation 
 
 #### Food
 ```{r}
@@ -382,36 +376,59 @@ mregion_summary <- paasche_extended  %>%
 print(mregion_summary)
 ```
 
-## Full coverage index
+## Full-coverage Price Index
 
-### Theory 
-@amendola2024 and @amendola2025 proposed a novel strategy for generating a full coverage Paasche spatial deflator. The central result of their approach can be expressed as follows:
+### Conceptual Overview of the Full-coverage Price Index method 
+@amendola2024 and @amendola2025 proposed a novel strategy for generating a full-coverage Paasche spatial deflator. The central result of their approach can be expressed as follows:
 
 $$
-P_h^{\text{(full coverage)}} = \left[ w_h^{\text{food}} \left( P_h^{\text{food}} \right)^{-1} + \left(1 - w_h^{\text{food}} \right) \left( P_h^{\text{nfood}} \right)^{-1} \right]^{-1} 
+P_h^{\text{(full-coverage)}} = \left[ w_h^{\text{food}} \left( P_h^{\text{food}} \right)^{-1} + \left(1 - w_h^{\text{food}} \right) \left( P_h^{\text{nfood}} \right)^{-1} \right]^{-1} 
 $${#eq-full-coverage}
 
 where $w_h^{\text{food}}$ is the food budget share of household $h$, and $P_h^{\text{food}}$ is the household-level food Paasche index defined in @eq-fpaasche.
 
 $$
 P_h^{\text{nfood}} = \frac{1}{1 - w_z} \, \widetilde{\text{SPI}}_g - \frac{w_z}{1 - w_z} \, \text{SPI}_g^{\text{food}}
-\quad \label{#eq:ph-nfood}
-$$
+\quad 
+$${#eq-ph-nfood}
 
 where ${SPI}_g^{food}$ is a Paasche spatial food price index for group $g$ – typically a district, province or region, $\widetilde{SPI_g} =  \frac{z_g}{E[z_g]}$ is an implicit deflator defined by the ratio between the group-level absolute poverty line $z_g$ and the average of the $G$ absolute poverty lines, and $w_z$ is the average food budget share of the bottom deciles of the distribution of per capita expenditure. The idea behind this method is that the ratio between absolute poverty lines and their national average can be interpreted as the ratio between the minimum expenditures needed to achieve a fixed minimum level of utility. The reference poverty lines must therefore be absolute, not relative, and must be correctly identified, that is, utility consistent.
 
+The calculation of the CBN poverty lines follows the well-established and widely-used method described in ravallion1998 ravallion2016. As for the calculation of non-food allocations, the upper-bound CBN lines, as opposed to the lower-bound CBN lines, must be used, ensuring that the ratio between the food poverty line and the total poverty line reflects the consumption patterns of poor households. ^[Additionally, as shown in Equation (1) in @menyhert2024, the non-food allowance in the CBN-lower bound line is always, by construction, lower than the food poverty line. This is a constraint that appears rather inappropriate in the context of middle- to high-income economies, where the food budget share is relatively low.]
 
-### Calorie Table Preparation 
-In addition to the listed data sets in @tbl-idata, a calorie conversion table is needed to convert food quantities consumed into calories. In this analysis, the authors primarily used publicly available sources such as https://www.nutritionix.com/, though additional sources were also consulted. Given the country-specific nature of food consumption, input from local experts would be valuable in finalizing the calorie conversion table.
 
-The final conversion table in Excel is saved in folder data_in. 
+### Data Sets Used for the Analysis
+The same table presented in @tbl-idata is shown again here, with one additional variable required for the analysis in this section.
 
 ```{r, echo = FALSE}
+kable(idata, caption = "Processed HBS data to be used in this chapter")
+```
+
+
+
+#### Preparation of Calorie Conversion Table
+
+A calorie conversion table is required to convert food quantities consumed into calories. In this analysis, the authors primarily used publicly available sources such as [https://www.nutritionix.com/](https://www.nutritionix.com/), though additional sources were also consulted. Given the country-specific nature of food consumption, input from local experts would be valuable for finalizing the calorie conversion table.
+
+The finalized conversion table (in Excel format) is saved in the `data_in` folder.
+
+```{r, echo = FALSE}
+# Auxiliary calorie table input data:
+auxiliary_idata <- tribble(
+  ~File, ~Description,
+  "kcal_conversion_factors.xlsx", "Prepared calorie table",
+)
+```
+
+```{r tbl-caltab_xlsx, echo = FALSE}
 kable(auxiliary_idata, caption = "Processed HBS data to be used in this chapter")
 ```
 
 
-### Preparation: Food calorie conversion table ----
+#### Combining Calorie Conversion with Food Item Data
+
+In this step, the calories consumed for each food item are estimated using the Calorie Conversion Table. To control for outliers, households whose per capita calorie consumption falls in the bottom or top 1 percent of the sample are excluded.
+
 ```{r}
 # Load food calorie conversion factor table in Excel
 kcal_conversion_factors <- read_excel(file.path(data_in,"kcal_conversion_factors.xlsx"))
@@ -432,32 +449,33 @@ foodkcal <- foodkcal %>%
 #Count if we have missing in kcal100g (calorie conversion) to confirm zero.
 sum(is.na(foodkcal$kcal100g))
 
-# Generate kcal variable for each item
+# Generate kcal (Daily kilocalories consumed per capita) variable for each item
 foodkcal$kcal <- foodkcal$cons_q * (foodkcal$edible / 100) * (foodkcal$kcal100g / 100)
 # Check var kcal
-skim(foodkcal$kcal)
+skim(foodkcal$kcal)%>%
+  yank("numeric")
 
-# Tabulate codes with kcal > 100000
-foodkcal %>%
-  filter(kcal > 100000) %>%
-  dplyr::count(description) %>%  
-  arrange(desc(n))
 
-# Mean cons_q and kcal100g for high kcal items
+# Tabulate items with quantity and calorie per 100 g if kcal > 100000
 foodkcal %>%
   filter(kcal > 100000) %>%
   group_by(description) %>%
   summarise(
+    code = mean(code, na.rm = TRUE),
     mean_cons_q = mean(cons_q, na.rm = TRUE),
     mean_kcal100g = mean(kcal100g, na.rm = TRUE),
     .groups = "drop"
   )
+##Suggesting that more careful data cleaning might be useful. Leave this for now. 
 
-
-# Tabulate codes where kcal == 0 and cons_q != 0
+# Tabulate items where kcal == 0 and cons_q != 0
 foodkcal %>%
   filter(kcal == 0, cons_q != 0) %>%
-  dplyr::count(code) %>%
+  group_by(description) %>%
+  summarise(
+    code = mean(code, na.rm = TRUE),
+    n = n(),
+  ) %>%
   arrange(desc(n))
 
 # Drop cigarettes and cigars
@@ -491,8 +509,9 @@ cutoffs <- kcal %>%
 kcal <- kcal %>%
   filter(kcalpc >= cutoffs$p1, kcalpc <= cutoffs$p99)
 
-# Descriptive stat of kcalpc
-skim(kcal$kcalpc)
+# Descriptive statistics of kcalpc
+skim(kcal$kcalpc)%>%
+  yank("numeric")
 
 # Sort by household id and kcal
 kcal <-  kcal %>%
@@ -506,8 +525,9 @@ kcal <- kcal %>%
     kcalpc = mean(kcalpc, na.rm = TRUE),
   )
 
-skim(kcal)
-#No missing in kcalpc
+#Checking final per capita calorie (kcalpc).
+skim(kcal$kcalpc)%>%
+  yank("numeric")
 
 # labelling 
 label(kcal$kcalpc) <- "Daily kilocalories consumed (per capita)"
@@ -516,13 +536,17 @@ write_rds(kcal, file.path(data_temp, "kcal.rds"), compress = "gz")
 ```
 
 
-###	Regional (Nuts2) Poverty Lines Estimation
-#### CBN poverty lines: FPL
-#### CBN poverty lines: FPL
-#### CBN poverty lines: non-food allowances
+###	Regional (NUTS 2) Poverty Lines Estimation
+This section estimates regional poverty lines using the Cost of Basic Needs (CBN) method to derive the implicit spatial price index: $\widetilde{SPI_g} = \frac{z_g}{E[z_g]}$ in {@eq-ph-nfood}.
+
+The CBN poverty line is calculated separately for each NUTS 2 region, following the steps below, and the results are saved together in a combined dataset.
+
+- **Step 1**: Calculation of the food poverty line  
+- **Step 2**: Calculation of non-food allowances
 
 
 ```{r}
+#Load the consumption aggregate data.
 ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
 
 ca_nominal_t2 <- ca_nominal_t2 %>%
@@ -539,15 +563,23 @@ ca_nominal_t2 <- ca_nominal_t2 %>%
   )    
 
 ca_kcal <- mg(ca_nominal_t2, kcal, key = c("hhid"))
-#drop trimmed observations
+#Drop trimmed observations (merge=1) for calorie outliers.
 ca_kcal <- ca_kcal %>% filter(merge != 1)
 ca_kcal <- ca_kcal %>%
   select(-merge)
+```
 
+This is the list of the NUTS 2 locations: 
+
+```{r}
 # Loop over nuts2
 nuts2_list <- unique(ca_nominal_t2$nuts2)
 print(nuts2_list)
+```
 
+The loop for calculating poverty lines across NUTS 2 regions begins below:
+
+```{r}
 #Note run the following loop altogether. 
 
 for (m in nuts2_list) {
@@ -563,7 +595,7 @@ for (m in nuts2_list) {
     arrange(hhid) %>%
     mutate(mpcet_dec = ntile(mpcet, 10))
 
-####	2.2.2.1 CBN poverty lines: FPL ----
+  #Step 1: Getting Food Poverty lines
 
     # Food poverty line 
   er <- 2200
@@ -584,11 +616,10 @@ for (m in nuts2_list) {
   label(nuts2_data$n_smp) <- "N obs"          
   label(nuts2_data$fpl) <- "Food PL (PLN/person/month)"
   
-  skim(nuts2_data$fpl)
+  skim(nuts2_data$fpl)%>%
+  yank("numeric")
 
-  ### 2.2.2.2	CBN poverty lines: non-food allowances ----
-  
-  
+  #Step 2: Getting non-food allowances
   width <- 0.10
   nuts2_data <- nuts2_data %>%
     mutate(
@@ -662,9 +693,60 @@ overall_poverty <- bind_rows(lapply(nuts2_list, function(m) {
 write_rds(overall_poverty, file.path(data_temp,"poverty_line_nominal_nuts2.rds"), compress = "gz")
 ```
 
+###	Six Steps to Calculalate Full-coverage Deflator
 
-###	Calculation of FULL COVERAGE Deflator
-```{r}
+You can follow the following steps to get the full-coverage deflator. 
+
+#### Step 1: Calculate the **household-level** food Paasche index $P_h^{food}$ in @eq-full-coverage. The formula is already defined in @eq-fpaasche. {.unnumbered}
+
+```{r, results='hide'}
+### Food component of full-coverage index (hh level)
+
+#Load food item data 
+food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
+  rename(foodq = cons_q) %>%
+  mutate(up = foodexp / foodq)  # Compute mean price at household level
+
+# Compute mean price at NATIONAL level
+up0 <- food_expenditure_item %>%
+  group_by(code) %>%
+  summarise(up0 = mean(up, na.rm = TRUE), .groups = "drop")
+
+# Load household expenditure data
+ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
+
+# Merge expenditure data (`m:1 hhid`)
+food_expenditure_item <- mg(food_expenditure_item , ca_nominal_t2, key=c("hhid"), drop_merge = TRUE) 
+
+# Compute food budget share
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(w_f = foodexp / mpcet)
+
+var_label(food_expenditure_item$w_f) <- "Food item budget share of total expenditure"
+
+# Merge price data (up0)
+food_expenditure_item <- mg(food_expenditure_item, up0, key=c("code"), drop_merge = TRUE)
+
+food_expenditure_item <- food_expenditure_item %>%
+  mutate(inv_spi_food_full = w_f * (up0 / up))
+
+# Collapse food components to household level
+spi_food_full <- food_expenditure_item %>%
+  group_by(hhid) %>%
+  summarise(inv_spi_food_full = sum(inv_spi_food_full, na.rm = TRUE),
+            region = first(region),
+            nuts2 = first(nuts2), .groups = "drop") %>%
+  mutate(spi_food_full = 1 / inv_spi_food_full)  # Compute SPI food full
+
+var_label(spi_food_full$spi_food_full) <- "SPI food at household level"
+
+write_rds(spi_food_full, file.path(data_temp, "spi_food_full.rds"), compress = "gz")
+```
+
+
+#### Step 2: Compute the Paasche spatial food price index at NUTS 2 (**group $g$** as in ${SPI}_g^{food}$ in @eq-ph-nfood). Note that this is different from the household-level food Paasche in @eq-fpaasche. {.unnumbered} 
+
+```{r, results='hide'}
 #Compute SPI food (nuts2 level)
 food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
   rename(foodq = cons_q) %>%
@@ -709,8 +791,10 @@ spi_food_nuts2 <-  nuts2_budget_shares %>%
   mutate(
     spi_food = 1 / inv_spi_food,  # Compute SPI food
   )
-
-skim(spi_food_nuts2$spi_food)
+```
+```{r}
+skim(spi_food_nuts2$spi_food)%>%
+  yank("numeric")
 
 # Generate summary table for counties
 nuts2_summary <- spi_food_nuts2 %>%
@@ -721,52 +805,13 @@ nuts2_summary <- spi_food_nuts2 %>%
 print(nuts2_summary)
 
 saveRDS(spi_food_nuts2, file.path(data_temp, "spi_food_nuts2.rds"))
-
-### Food component of full coverage index (hh level)
-
-#Load food item data 
-food_expenditure_item <- readRDS(file.path(data_temp, "food_expenditure_item.rds")) %>%
-  rename(foodq = cons_q) %>%
-  mutate(up = foodexp / foodq)  # Compute mean price at household level
-
-# Compute mean price at NATIONAL level
-up0 <- food_expenditure_item %>%
-  group_by(code) %>%
-  summarise(up0 = mean(up, na.rm = TRUE), .groups = "drop")
-
-# Load household expenditure data
-ca_nominal_t2 <- readRDS(file.path(data_in, "ca_nominal_t2.rds"))
-
-# Merge expenditure data (`m:1 hhid`)
-food_expenditure_item <- mg(food_expenditure_item , ca_nominal_t2, key=c("hhid"), drop_merge = TRUE) 
-
-# Compute food budget share
-food_expenditure_item <- food_expenditure_item %>%
-  mutate(w_f = foodexp / mpcet)
-
-var_label(food_expenditure_item$w_f) <- "Food item budget share of total expenditure"
-
-# Merge price data (up0)
-food_expenditure_item <- mg(food_expenditure_item, up0, key=c("code"), drop_merge = TRUE)
-
-food_expenditure_item <- food_expenditure_item %>%
-  mutate(inv_spi_food_full = w_f * (up0 / up))
-
-# Collapse food components to household level
-spi_food_full <- food_expenditure_item %>%
-  group_by(hhid) %>%
-  summarise(inv_spi_food_full = sum(inv_spi_food_full, na.rm = TRUE),
-            region = first(region),
-            nuts2 = first(nuts2), .groups = "drop") %>%
-  mutate(spi_food_full = 1 / inv_spi_food_full)  # Compute SPI food full
-
-var_label(spi_food_full$spi_food_full) <- "SPI food at household level"
-
-write_rds(spi_food_full, file.path(data_temp, "spi_food_full.rds"), compress = "gz")
+```
 
 
+#### Step 3: Compute $w_z$, the average food budget share of the bottom deciles of the distribution of per capita expenditure {.unnumbered}
 
-# Non Food Component of full coverage index
+```{r}
+# Non Food Component of full-coverage index
 # INDIRECT METHOD 
 
 #Load data
@@ -779,6 +824,7 @@ ca_nominal_t2 <- ca_nominal_t2%>%
 w_z_data <- mg(ca_nominal_t2, kcal, key=c("hhid")) %>%
   filter(merge==3) %>%
   select(-merge) 
+##Drop unmatched cases (merge=1) for households with too low or high calorie.
 
 w_z_data <- w_z_data %>% 
   arrange(mpcet)  %>%
@@ -799,8 +845,11 @@ w_z_data <- w_z_data %>%
   mutate(id_w = 1)  
 
 write_rds(w_z_data, file.path(data_temp, "w_z.rds"), compress = "gz")
+```
 
+#### Step 4: Compute the group level poverty lines using the CBN method in order to derive the implicit deflator $\widetilde{SPI_g} =  \frac{z_g}{E[z_g]}$ in @eq-ph-nfood  {.unnumbered}
 
+```{r}
 #  Compute spi_implicit - ratio of poverty lines and avg PL (UB)
 
 nuts2_deflators <- readRDS(file.path(data_temp, "poverty_line_nominal_nuts2.rds"))
@@ -808,9 +857,12 @@ spi_implicit <- nuts2_deflators %>%
   mutate(spi_implicit = ubpl / mean(ubpl, na.rm = TRUE))
 
 write_rds(spi_implicit, file.path(data_temp, "spi_implicit.rds"), compress = "gz")
+```
 
 
+#### Step 5: Compute the $P_h(g)^{nfood}$ in @eq-full-coverage. {.unnumbered}
 
+```{r, results='hide'}
 # Compute non food component for indirect method (spi_nfood)
 spi_food_nuts2 <- readRDS(file.path(data_temp, "spi_food_nuts2.rds")) %>%
   mutate(id_w = 1)  
@@ -825,22 +877,25 @@ spi_nfood_i <- spi_food_nuts2 %>%
   mutate(inv_spi_nfood = (1 / (1 - w_z)) * spi_implicit - (w_z / (1 - w_z)) * spi_food)
 
 write_rds(spi_nfood_i, file.path(data_temp, "spi_nfood_i.rds"), compress = "gz")
+```
 
 
-# SPI full_coverage (indirect method) - food component at hh level
+#### Step 6. Compute the full-coverage index. {.unnumbered} 
 
+```{r, results='hide'}
+# Load the elements of SPI full-coverage index
 spi_full <- readRDS(file.path(data_temp, "spi_food_full.rds"))
-
 spi_nfood_i <- readRDS(file.path(data_temp, "spi_nfood_i.rds"))
 spi_full <- mg(spi_full, spi_nfood_i, key = "nuts2",drop_merge = TRUE)
 
 
-# Compute full coverage indices
+# Compute full-coverage indices
 spi_full <- spi_full %>%
   mutate(
     spi_full_indirect = 1 / (inv_spi_food_full + (1 - w_z) * (1 / inv_spi_nfood)),
   )
-
+```
+```{r}
 # Verify computed variables
 summary(spi_full$spi_full_indirect)
 
@@ -857,9 +912,10 @@ write_rds(spi_full, file.path(data_temp, "spi_full.rds"), compress = "gz")
 ```
 
 
-## Consolidation of estimated spatial price deflators ----
+## Consolidation of estimated spatial price deflators
+Finally, let's bring together all of the estimated price deflators. 
 
-```{r}
+```{r,results='hide'}
 # Bring all indices together 
 # Load the Paasche extended dataset
 paasche_extended <- readRDS(file.path(data_temp, "paasche_extended.rds"))
@@ -891,10 +947,10 @@ paasche_extended <- paasche_extended %>%
 
 # Rename labels (for clarity in output)
 label_descriptions <- c(
-  "Paasche food - hh level",
+  "Food Paasche - hh level",
   "Extended Paasche (food+ rent) - hh level",
-  "Full coverage SPI - Food component",
-  "Full coverage SPI - Indirect method"
+  "Full-coverage SPI - Food component",
+  "Full-coverage SPI - Indirect method"
 )
 
 names(label_descriptions) <- c(
@@ -904,13 +960,45 @@ names(label_descriptions) <- c(
 
 # Save the household level spatial price indexes
 write_rds(paasche_extended, file.path(data_out, "spi_all_hh.rds"), compress = "gz")
-
-# Display skim statistics equivalent: final quick look
-skim(paasche_extended$spi_food)
-skim(paasche_extended$spi_food_rent)
-skim(paasche_extended$spi_full_indirect)
+```
 
 
+```{r}
+# Final quick look
+fin_check<- paasche_extended %>%
+  select(spi_food,spi_food_rent,spi_full_indirect) 
+skim(fin_check)%>%
+  yank("numeric")
+```
+
+
+
+
+
+The list of the variable names and price indexes estimated at the NUTS 2 levels are shown in the table below.
+
+| Variable        | Price index                    |
+|-----------------|--------------------------------|
+| spi_food        | Food Paasche                   |
+| spi_food_rent   | Extended Paasche (food+ rent)  |
+| spi_full        | Full-coverage Price Index      |
+: Price Index  {.striped .hover}
+
+
+
+
+The list of variables re-scaled is shown in the next table: 
+
+| Variable        | Price index                            |
+|-----------------|----------------------------------------|
+| spi_food_r      | Rescaled Food Paasche                  |
+| spi_food_rent_r | Rescaled Extended Paasche (food+ rent) |
+| spi_full_r      | Rescaled Full-coverage Price Index     |
+: Rescaled Price Index  {.striped .hover}
+
+
+
+```{r}
 # Generate summary tables 
 # Collapse (mean) by NUTS2 and rescale
 table_nuts2 <- paasche_extended %>%
