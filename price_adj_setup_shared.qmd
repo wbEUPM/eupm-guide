@@ -6,7 +6,7 @@ pacman::p_load(
   Hmisc, haven, labelled, skimr, openxlsx, tidyverse,
   broom, janitor, matrixStats, estimatr, modelsummary,
   fastDummies, readxl, survey, knitr, tibble, car,
-  robustbase, bestNormalize, tinytable, pandoc
+  robustbase, bestNormalize
 )
 
 # Set paths

@@ -1,13 +1,40 @@
 # Introduction
 
-This guide demonstrates the implementation of the approaches proposed in @amendola2025, using the 2019 Poland Household Budget Survey (HBS) to illustrate the estimation of price deflators. The guideline is organized into two main sections:
+This guide demonstrates the implementation of the approaches proposed in @amendola2025, using the 2019 Poland Household Budget Survey (HBS) to illustrate the estimation of spatial price deflators. The guide is organized into two main sections:
 
-- **[Section 1: Construction of the consumption aggregate](cons_agg.qmd)**  
-- **[Section 2: Estimation of price deflators](price-adj.qmd)**
+- **[Section 2: Construction of the Consumption Aggregate](cons_agg.qmd)**  
+- **[Section 3: Estimation of Price Deflators](price-adj.qmd)**
 
-If a consumption aggregate is already available in the HBS, users may proceed directly to [Section 2](price-adj).
+If your HBS data does not include a consumption aggregate, the diagram below can help determine which section to start with, based on the availability of rent-related data and other key variables. Follow the diagram to assess whether the necessary information is available to conduct the analysis. Even if your HBS data already include a consumption aggregate, you should still examine its sub-components, as explained below.
 
-Before beginning the analysis, we set up directories, load the required libraries, and source user-defined functions.
+```{mermaid}
+flowchart TD
+  Q1["Q1. Does the HBS include<br>food and non-food modules<br>AND inquire rent paid for renters?"]
+  Q1 -->|Yes| Q2["Q2. Are self-reported rents<br>available for non-renters?"]
+  Q1 -->|No| End1["Stop: This method<br>cannot be used."]
+
+  Q2 -->|Yes| End2["Go to Section 2"]
+  Q2 -->|No| Q3["Q3. Does the HBS include a<br>housing module<br>(e.g., roof, floor, etc.)?"]
+
+  Q3 -->|Yes| End2["Go to Section 2"]
+  Q3 -->|No| End1["Stop: This method<br>cannot be used."]
+
+  %% Optional: make nodes clickable in HTML output
+  %% click Section 1 href "cons_agg.qmd"
+```
+
+If your HBS data include a consumption aggregate, examine whether all of its components are available. @deaton2002 and @mancini2022 outline the recommended components of a comprehensive consumption aggregate:
+
+1. Food expenditure items  
+2. Non-food nondurable items  
+3. Rent paid and imputed rents for non-renters and non-market renters  
+4. Durable goods (estimated consumption flow from durable goods)  
+
+In the case of the 2019 HBS data, the fourth component—the consumption flow from durable goods—was not estimated. This is because the BR-04 module (Supplementary Household Information) only collects the number of durable furnishing items owned by households, and only a subset of households was interviewed. Therefore, for the purpose of calculating the price deflator, the consumption aggregate was constructed using components 1–3. 
+
+If you confirm that the available consumption aggregate includes the key components, you may proceed directly to Section 3.
+
+Lastly, before beginning the analysis in the next chapter, we organize the directories, load the required libraries, and source user-defined functions.
 
 ```{r, results='hide', message=FALSE, warning=FALSE}
 # Set working directory to project root (assumes pl-hbs.Rproj is opened)
@@ -32,7 +59,7 @@ pacman::p_load(
   Hmisc, haven, labelled, skimr, openxlsx, tidyverse,
   broom, janitor, matrixStats, estimatr, modelsummary,
   fastDummies, readxl, survey, knitr, tibble, car,
-  robustbase, bestNormalize, tinytable, pandoc
+  robustbase, bestNormalize
 )
 
 # Load custom functions

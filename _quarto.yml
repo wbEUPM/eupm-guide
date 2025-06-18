@@ -2,9 +2,9 @@ project:
   type: book
 
 book:
-  title: "EUPM Practitioners Guide - price ajdustment"
+  title: "EUPM Practitioners Guide - Price Ajdustment"
   # author: "TODO"
-  date: "6/13/2025"
+  date: "6/17/2025"
   chapters:
     - index.qmd
     - cons_agg.qmd
@@ -20,6 +20,9 @@ bibliography: references.bib
 
 format:
   html:
+    toc: true
+    toc-depth: 4
+    self-contained: true    
     number-sections: true
     theme: cosmo
     code-fold: false

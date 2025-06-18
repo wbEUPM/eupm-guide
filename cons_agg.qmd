@@ -1,37 +1,38 @@
 ```{r, child="price_adj_setup_shared.qmd"}
 ```
 
-# Creation of consumption aggregate
+# Creation of Consumption Aggregate
 
-## Introduction of this section
+This chapter begins with a description of the 2019 HBS raw data and its auxiliary files that will be used in the analysis that follows.
 
-### Data sets used for the analysis 
+## Overview of HBS Data and Auxiliary Files
 
-From the 2019 Poland Houshold Budget Survey (HBS), the following raw data and accompanying auxiliary files are used:
+The 2019 Poland Household Budget Survey (HBS) provides the primary raw data used in this analysis, supplemented by several auxiliary files essential for constructing the consumption aggregate and related indicators.
 
 ```{r, echo = FALSE}
 # 2019 HBS raw data list used:
 hbs_rdata <- tribble(
   ~File, ~Description,
-  "BR2019_Kat.dta", "Household data",
-  "BR2019_Roz.dta", "Diary Data",
+  "BR2019_Kat.dta", "Household-level data",
+  "BR2019_Roz.dta", "Diary data on expenditures",
   "BR2019_01a_1.dta", "Housing module data"
 )
 
 # Auxiliary data from 2019 HBS data:
 auxiliary_rdata <- tribble(
   ~File, ~Description,
-  "desc_from_diary.dta", "Description of items in diary data",
-  "pol_codes15.dta", "Coicop 15 item code",
-  "desc_from_diary_2digit.dta", "Description of items in diary data (2 digit)"
+  "desc_from_diary.dta", "Item descriptions from diary data",
+  "pol_codes15.dta", "COICOP 15-digit item codes",
+  "desc_from_diary_2digit.dta", "Item descriptions from diary data (2-digit level)"
 )
 
 ```
 
-```{r, echo = FALSE}
-kable(hbs_rdata, caption = "2019 HBS Raw Data List Used")
-kable(auxiliary_rdata, caption = "Auxiliary data for 2019 HBS data:")
+```{r, echo = FALSE, results='asis'}
+kable(hbs_rdata, caption = "Table: Raw Data Files from the 2019 HBS")
+kable(auxiliary_rdata, caption = "Table: Metadata and Codebooks for the 2019 HBS")
 ```
+
 
 After the data analysis, the following processed data are created and are used to estimate price deflators. All data sets are saved as .RDS. Each of these data are explained more in the next section.
 
@@ -51,16 +52,17 @@ proc_data <- tribble(
 )
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, results='asis'}
 kable(proc_data, caption = "Processed data to be used in the next section")
 ```
 
-## Prepares files that include supporting variables needed for welfare analysis.
-This part prepares files that include supporting variables needed for welfare analysis.
 
-### HH level data (hhsize, location, quarter, etc.) from HH roster
+## Preparing Supporting Variables for Welfare Analysis
 
-# Load and clean data
+This section generates files containing the variables required to support the welfare analysis.
+
+### Household-Level Data (Household Size, Location, Quarter, etc.) from the Household Roster
+
 ```{r}
 # Load and clean  data
 raw_data <- read_dta(file.path(data_raw, "BR2019_Kat.dta")) %>%
@@ -190,7 +192,6 @@ write_rds(cpi, file.path(data_in, "cpi.rds"), compress = "gz")
 ### Sub-aggregates of consumption aggregate: food, nfnd, rent
 
 #### Preparation
-
 ```{r}
 # Load and Prepare Diary Data
 diary <- read_dta(file.path(data_raw, "BR2019_Roz.dta")) %>%
@@ -241,10 +242,11 @@ var_label(diary$code) <- "Item code"
 var_label(diary$hhid) <- "Household ID"
 
 diary <- diary %>% mutate(div_s1 = substr(as.character(r1), 1, 2))
+```
 
 
-### 1.2.1.1 Food item ----
-
+#### Food item
+```{r}
 #Keep quantity (r4) and expenditure (r5) only for food items bought or obtained 
 #from non-purchased sources. 
 food_item <- diary %>%
@@ -268,9 +270,11 @@ food_item <- food_item %>%
 
 # Save Food Item Data
 write_rds(food_item, file.path(data_in, "food_item.rds"), compress = "gz")
+```
 
 
-### 1.2.1.2 Nonfood items ----
+#### Nonfood items
+```{r}
 # Var r5 includes both inkind and monetary goods and adjusted to yearly
 ca_data <- diary %>% rename(s = r5) %>% mutate(s = s * 12)
 
@@ -279,7 +283,11 @@ ca_data <- ca_data %>%
   group_by(hhid, div_s) %>% summarise(s = sum(s, na.rm = TRUE), .groups = "drop") %>%
   pivot_wider(names_from = div_s, values_from = s, names_prefix = "s", values_fill = 0)
 
-#### 1.2.1.3 Rent paid----
+```
+
+
+#### Rent paid
+```{r}
 # Renaming rent paid variable
 ca_data <- ca_data %>%
   rename(ca_rent = s04_1) 
@@ -373,16 +381,17 @@ ca_data <- ca_data %>%
 ca_nominal_t<- ca_data
 write_rds(ca_data, file.path(data_temp, "ca_nominal_t.rds"), compress = "gz")
 
+```
 
-## 1.3 Creation of consumption aggregate with imputed rents -----
 
-# Information on household assets was not used here, although it is generally
-# useful, because the module was administered to only half of the households.
-# This was tested but is not presented here due to space limitations. It can 
-# be shared upon request.
+## Creation of consumption aggregate with imputed rents
+Though rent paid is usually inquired in HBS, relying only on rent paid by renters as utilities from housing under-estimate welfare since non-renter households also benefit from living in houses they own, as renters do. The share of Poland households in 2019 is X percent, according to the HBS data. 
 
-### 1.3.1 Data pre ----
+Household asset ownership was not used in this example, although it is generally useful due to its high correlation with household wealth. In the 2019 Poland HBS, the asset module was administered to only half of the households, so including asset information would reduce the sample size by half. Therefore, we prefer an approach that retains a larger sample rather than incorporating asset ownership data at the cost of reduced coverage. 
 
+### Data preparation
+
+```{r}
 # Load housing data and merging with HH infor.,and CA files. 
 housing_data <- read_dta(file.path(data_raw, "BR2019_01a_1.dta")) %>%
   rename_all(tolower) %>%
@@ -420,7 +429,8 @@ housing_data <- housing_data %>%
 # Descriptive statistics of rents paid for renters (var rent) 
 housing_data %>%
   filter(rent > 0) %>%
-  skim(rent)
+  skim(rent)%>%
+  yank("numeric")
 prop.table(table(housing_data$renter[!is.na(housing_data$rent)])) * 100
 describe(housing_data$rent[housing_data$rent > 0])
 
@@ -453,14 +463,18 @@ housing_data %>%
     max_rent = max(rent, na.rm = TRUE)
   )%>%
   ungroup()
+```
 
 
-# Detect outliers in rent
-## The outdetect function detects outliders in the following steps:
-# 1. Applied outdetect() to rent using Yeo–Johnson transformation and robust Qn scale estimator.
-# 2. Observations with rounded z-scores ≥ 2.99 or ≤ –2.99 flagged as upper (2) or lower (1) outliers.
-# 3. Results (rent_z, rent_outlier) added to housing_data for filtering or review.
 
+#### Detecting outliers in rent paid
+The outdetect function detects outliders in the following steps:
+ 1. Applied outdetect() to rent using Yeo–Johnson transformation and robust Qn scale estimator.
+ 2. Observations with rounded z-scores ≥ 2.99 or ≤ –2.99 flagged as upper (2) or lower (1) outliers.
+ 3. Results (rent_z, rent_outlier) added to housing_data for filtering or review.
+
+```{r}
+# Apply the outlier detection function "outdetect".
 rent_outlier <- outdetect(housing_data$rent)
 housing_data <- housing_data %>%
   bind_cols(rent_outlier %>% rename(
@@ -531,9 +545,15 @@ housing_data %>%
     .groups = "drop"
   )
 
-### 1.3.2 Hedonic model analysis ----
+```
 
-#### 1.3.2.1 Hedonic model: dependent variable ----
+### Hedonic rent imputation model analysis
+
+This section follows the hedonic rent imputation method described in detail in Section 4.5.2 of @mancini2022 and Section 3.5 of @deaton2002.
+
+#### Dependent variable
+
+```{r}
 # Excluding extreme observations observed above helps minimize bias in coefficients. 
 housing_data <- housing_data %>%
   mutate(
@@ -542,10 +562,14 @@ housing_data <- housing_data %>%
   )
 
 #Descriptive stat of ln rent paid
-skim(housing_data$lnrent)
+skim(housing_data$lnrent)%>%
+  yank("numeric")
 
 
-#### 1.3.2.2 Hedonic model: regressors ----
+```
+
+#### Regressors
+```{r}
 #Processing and adding housing variables
 housing_data <- housing_data %>%
   # Type of dwelling unit
@@ -617,8 +641,12 @@ housing_data %>%
   summarise(across(all_of(vars), ~ weighted.mean(.x, w = hhw, na.rm = TRUE))) %>%
   mutate(across(everything(), ~ round(.x, 4)))
 
+```
 
-#### 1.3.2.3 Hedonic Regressions  ------------------------------------------------------------------
+
+
+#### Hedonic regressions  
+```{r}
 vars <- c("area", "nroom", "heat1", "heat2", "gas1", "gas2",
           "built_yr2", "built_yr3", "built_yr4", "built_yr5", "built_yr6",
           pc_vars, "hhsize", "urban")
@@ -665,8 +693,11 @@ print(regtbl)
 
 #The second model with region nummy vars is selected with smaller AIC and BIC and larger R-sq.
 
+```
 
-#### 1.3.2.4 Predicting rent for owners using the final model ----
+
+#### Predicting rent for owners using the selected model
+```{r}
 #Predict values from the model (region dummies + all services)
 housing_data <- housing_data %>%
   mutate(
@@ -745,7 +776,8 @@ housing_data <- housing_data %>%
     )
   )
 
-skim(housing_data$exp_rent)
+skim(housing_data$exp_rent)%>%
+  yank("numeric")
 
 
 # Table XX: Actual rent compared to rent predicted via hedonic regression (/hh/month) 
@@ -809,8 +841,11 @@ write_rds(housing_data, file.path(data_temp, "rent_imp_full.rds"), compress = "g
 rent_imp <- housing_data %>%
   select(hhid, renter, exp_rent)
 
+```
 
-## 1.4 Creation of consumption aggregate with imputed rents after imputation.----
+
+## Creation of consumption aggregate with imputed rents after imputation
+```{r}
 # Merge imputed rent with consumption aggregate data
 ca_nominal_t <- readRDS(file.path(data_temp, "ca_nominal_t.rds"))
 ca_full <-   mg(ca_nominal_t, rent_imp, key="hhid")
@@ -904,12 +939,6 @@ ca_nominal_t2 <- ca_full %>%
 
 #Save the CA data revised. 
 write_rds(ca_nominal_t2, file.path(data_in, "ca_nominal_t2.rds"), compress = "gz")
-
-
-
-
-
-
-
 ```
+
 
