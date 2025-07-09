@@ -15,7 +15,7 @@ An overview of the MFH model estimation process is as follows:
 
 -   Step 2: Prepare variables (from administrative data or other sources of data representative at the target area level) at the level of the target area for each time instant in the MFH model. We present a simple approach which performs model selection in a pooled linear regression model without time effects.
 
--   Step 3: Fit the MFH models to test for homoskedastic area-time effects $({\mu_d}_1, ... , {\mu_d}_T)$ are homoskedastic or not. If we reject the homoskedasticity of variances, implement the MFH3 model. Otherwise, we proceed with the MFH2 model. For the purposes of this training, we assume a homoskedastic model for simplicity. 
+-   Step 3: Fit the MFH models to test for homoskedastic area-time effects $({\mu_d}_1, ... , {\mu_d}_T)$ are homoskedastic or not. If we reject the homoskedasticity of variances, implement the MFH3 model. Otherwise, we proceed with the MFH2 model. For the purposes of this training, we assume a homoskedastic model for simplicity.
 
 -   Step 4: Check the selected model assumptions, including linearity, normality of predicted area effects and standardized model residuals, and the presence of the outlying areas.
 
@@ -361,12 +361,17 @@ var_dt <-
 
 More (and probably better correlates of income and poverty) can be created to improve the predictive power of the model. The next step is to take target level variables. The MFH model is a model of poverty rates at the target area level, hence the data format required for this exercise has the province as its unit of observation. This format has a few essential columns:
 
--   (1) Variables for poverty rates for each time period
+-   
 
--   (2) The set of candidate variables from which the most predicted of poverty rates will be selected
+    (1) Variables for poverty rates for each time period
 
--   (3) The target area variable identifier (i.e. in this case the province variable `prov` and `provlab`)
+-   
 
+    (2) The set of candidate variables from which the most predicted of poverty rates will be selected
+
+-   
+
+    (3) The target area variable identifier (i.e. in this case the province variable `prov` and `provlab`)
 
 #### Model Selection
 
@@ -517,7 +522,7 @@ lapply(X = lmcheck_obj,
 
 ### Step 3: Model Estimations
 
-Next, we show how to use the `msae` R package to estimate the Empirical Best Linear Unbiased Predictor (EBLUP) for the poverty map using the `eblupMFH2()` which allow for time series fay herriot estimation under homoskedastic assumptions. For completeness, we also briefly perform the previous described direct estimation in step 1, using the `eblupUFH()` function as well as the `eblupMFH1()` for the fay herriot model. 
+Next, we show how to use the `msae` R package to estimate the Empirical Best Linear Unbiased Predictor (EBLUP) for the poverty map using the `eblupMFH2()` which allow for time series fay herriot estimation under homoskedastic assumptions. For completeness, we also briefly perform the previous described direct estimation in step 1, using the `eblupUFH()` function as well as the `eblupMFH1()` for the fay herriot model.
 
 ```{r}
 
@@ -548,17 +553,9 @@ model1_obj <- eblupMFH1(mfh_formula, vardir = varcols, data = prov_dt, MAXITER =
 model2_obj <- eblupMFH2(mfh_formula, vardir = varcols, data = prov_dt, MAXITER = 1e10, PRECISION = 1e-2)
 # model3_obj <- eblupMFH3(mfh_formula, vardir = varcols, data = prov_dt, MAXITER = 1e10, PRECISION = 1e-2)
 
-```
 
-With the MFH3 estimation, we can check if the variance-covariance matrix structure points to heteroskedastic random effects. We do so as follows:
-
-```{r}
-
-# model3_obj$fit$refvarTest
 
 ```
-
-This tests the null hypothesis that the variances $\sigma_t^2$ at each pair of time instants $t$ and $s$ are equal against the alternative that they are not. In this case, at significance level of 0.05, we reject the equality of variances between $t = 2013$ and $t = 2014$. Hence we can use the MFH3 model (`eblupMFH3()` function). If these tests supported the equality of variances, then we would use instead the function `eblupMFH2` for estimation.
 
 ### Step 4: Post Estimation Diagnostics: Model Assumption Checks for Linearity, Normality and Outliers
 
@@ -788,9 +785,9 @@ cv_dt |>
 
 ```
 
-### Did the poverty rates change over time? 
+### Did the poverty rates change over time?
 
-Next we can call the `pbmcpeMFH2()` function, which returns the EBLUP, as well as, the MSEs of the EBLUPs for each time point, and the MCPEs for each pair of time points based on the MFH model 2 as follows: 
+Next we can call the `pbmcpeMFH2()` function, which returns the EBLUP, as well as, the MSEs of the EBLUPs for each time point, and the MCPEs for each pair of time points based on the MFH model 2 as follows:
 
 ```{r}
 
@@ -875,10 +872,7 @@ comp13_obj$plot
 
 ```
 
-
-
-
-See the data created 
+See the data created
 
 ```{r}
 
@@ -905,5 +899,44 @@ comp13_obj$df %>%
 
 ```
 
+#### Spatial Plot of Changes
+
+```{r}
+
+shp_dt <- st_as_sf(shp_dt, crs = 4326, agr = "constant")
+
+compute_slope <- function(mcpe_obj) {
+  y_df <- mcpe_obj$eblup
+  time_period <- 0:(ncol(y_df) - 1)  # For 2012, 2013, 2014
+
+  # Apply row-wise regression to get slope
+  slopes <- apply(y_df, 1, function(y) {
+    lm(y ~ time_period)$coefficients[2]
+  })
+
+  return(slopes)
+}
+shp_dt$slope <- compute_slope(mcpe_obj = mcpemfh2_obj)
 
 
+
+### Looking at the slope of the gradient
+
+shp_dt |>
+  ggplot() + 
+  geom_sf(aes(geometry = geometry, fill = slope), color = "white", linewidth = 0.2) +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0,
+    name = "Slope of Poverty Rate"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Gradient of Poverty Change (2012–2014)",
+    subtitle = "Positive = Increasing poverty, Negative = Decreasing poverty"
+  )
+
+
+
+
+```
